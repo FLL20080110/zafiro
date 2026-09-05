@@ -1,0 +1,62 @@
+name: Apply Temporary Grant UI V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/apply-temporary-grant-ui-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-temporary-grant-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Apply deterministic permission-dialog transform
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt')
+          text = path.read_text()
+
+          old = '''        actions = {\n            MaterialTintLiquidButton(\n                text = stringResource(R.string.tool_permission_deny),\n                onClick = { ToolPermissionCoordinator.respond(request.id, allowed = false) },\n                modifier = Modifier.weight(1f),\n                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,\n                contentColor = MaterialTheme.colorScheme.onSurface,\n            )\n            MaterialTintLiquidButton(\n                text = stringResource(R.string.tool_permission_allow),\n                onClick = { ToolPermissionCoordinator.respond(request.id, allowed = true) },\n                modifier = Modifier.weight(1f),\n                containerColor = MaterialTheme.colorScheme.primary,\n                contentColor = MaterialTheme.colorScheme.onPrimary,\n            )\n        },\n'''
+
+          new = '''        actions = {\n            MaterialTintLiquidButton(\n                text = stringResource(R.string.tool_permission_deny),\n                onClick = {\n                    ToolPermissionCoordinator.respond(\n                        request.id,\n                        com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.DENIED_BY_USER,\n                    )\n                },\n                modifier = Modifier.weight(1f),\n                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,\n                contentColor = MaterialTheme.colorScheme.onSurface,\n            )\n            MaterialTintLiquidButton(\n                text = "允许一次",\n                onClick = {\n                    ToolPermissionCoordinator.respond(\n                        request.id,\n                        com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.ALLOWED,\n                    )\n                },\n                modifier = Modifier.weight(1f),\n                containerColor = MaterialTheme.colorScheme.primary,\n                contentColor = MaterialTheme.colorScheme.onPrimary,\n            )\n            if (request.temporaryGrantScopeKey != null &&\n                (request.temporaryGrantDurationMs ?: 0L) > 0L\n            ) {\n                MaterialTintLiquidButton(\n                    text = "5分钟",\n                    onClick = {\n                        ToolPermissionCoordinator.respond(\n                            request.id,\n                            com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.ALLOWED_TEMPORARY,\n                        )\n                    },\n                    modifier = Modifier.weight(1f),\n                    containerColor = MaterialTheme.colorScheme.tertiary,\n                    contentColor = MaterialTheme.colorScheme.onTertiary,\n                )\n            }\n        },\n'''
+
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'permission dialog buttons: expected 1 match, found {count}')
+          text = text.replace(old, new, 1)
+
+          marker = '''                Text(\n                    text = request.command,\n                    style = MaterialTheme.typography.bodySmall,\n'''
+          scope = '''                if (request.temporaryGrantScopeKey != null &&\n                    (request.temporaryGrantDurationMs ?: 0L) > 0L\n                ) {\n                    Text(\n                        text = "临时授权：5分钟内仅允许完全相同的命令",\n                        style = MaterialTheme.typography.bodySmall,\n                        color = MaterialTheme.colorScheme.onSurfaceVariant,\n                    )\n                }\n'''
+          marker_count = text.count(marker)
+          if marker_count != 1:
+              raise SystemExit(f'temporary grant scope marker: expected 1 match, found {marker_count}')
+          text = text.replace(marker, scope + marker, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit transformed UI
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No UI changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+          git commit -m 'ui: add allow-once and five-minute permission choices'
+          git push origin "HEAD:${{ github.ref_name }}"
