@@ -27,18 +27,33 @@ object AgentEmergencyStop {
     fun isActive(): Boolean = activeFlag
 
     fun activate(reason: String = "Stopped by user") {
+        if (activeFlag) return
         activeFlag = true
         stateFlow.value = State(
             active = true,
             reason = reason,
             activatedAtEpochMs = System.currentTimeMillis(),
         )
+        SecurityAuditLog.record(
+            SecurityAuditEvent(
+                type = SecurityAuditEventType.EMERGENCY_STOP_ACTIVATED,
+                riskLevel = ToolPermissionRiskLevel.CRITICAL,
+                detail = reason,
+            )
+        )
         // Never leave a permission request suspended after the user hits stop.
         ToolPermissionCoordinator.denyPendingForEmergencyStop()
     }
 
     fun clear() {
+        if (!activeFlag) return
         activeFlag = false
         stateFlow.value = State()
+        SecurityAuditLog.record(
+            SecurityAuditEvent(
+                type = SecurityAuditEventType.EMERGENCY_STOP_CLEARED,
+                detail = "Agent execution resumed by user.",
+            )
+        )
     }
 }
