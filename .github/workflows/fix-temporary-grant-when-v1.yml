@@ -1,0 +1,56 @@
+name: Fix Temporary Grant When V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/fix-temporary-grant-when-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-when:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Add temporary-allow branches
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt')
+          text = path.read_text()
+
+          old1 = '''                    ToolPermissionResponse.ALLOWED -> Unit\n                    ToolPermissionResponse.DENIED_BY_USER -> {'''
+          new1 = '''                    ToolPermissionResponse.ALLOWED,\n                    ToolPermissionResponse.ALLOWED_TEMPORARY -> Unit\n                    ToolPermissionResponse.DENIED_BY_USER -> {'''
+          c1 = text.count(old1)
+          if c1 != 1:
+              raise SystemExit(f'built-in confirm replacement expected 1 match, found {c1}')
+          text = text.replace(old1, new1, 1)
+
+          old2 = '''                    ToolPermissionResponse.ALLOWED -> continue\n                    ToolPermissionResponse.DENIED_BY_USER -> return blocked.copy('''
+          new2 = '''                    ToolPermissionResponse.ALLOWED,\n                    ToolPermissionResponse.ALLOWED_TEMPORARY -> continue\n                    ToolPermissionResponse.DENIED_BY_USER -> return blocked.copy('''
+          c2 = text.count(old2)
+          if c2 != 1:
+              raise SystemExit(f'user-rule confirm replacement expected 1 match, found {c2}')
+          text = text.replace(old2, new2, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
+          git commit -m 'fix: handle temporary permission response in shell policy'
+          git push origin "HEAD:${{ github.ref_name }}"
