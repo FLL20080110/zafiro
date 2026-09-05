@@ -70,7 +70,10 @@ class XRepoRuntimeGateway(
         return repo.memory.replaceByText(oldText, content)
     }
 
-    override suspend fun listCustomPyTools(): List<RuntimeCustomPyTool> = repo.customPyTools.list()
+    override suspend fun listCustomPyTools(): List<RuntimeCustomPyTool> {
+        if (!readPrivacyPolicy().allowNetworkTools) return emptyList()
+        return repo.customPyTools.list()
+    }
 
     override suspend fun saveCustomPyTool(
         tool: RuntimeCustomPyTool,
@@ -88,7 +91,15 @@ class XRepoRuntimeGateway(
     }
 
     override suspend fun listBuiltinToolSettings(): List<RuntimeBuiltinToolSetting> {
-        return repo.builtinTools.list()
+        val settings = repo.builtinTools.list()
+        if (readPrivacyPolicy().allowNetworkTools) return settings
+        return settings.map { setting ->
+            if (setting.name in PRIVACY_MODE_BLOCKED_BUILTINS) {
+                setting.copy(enabled = false)
+            } else {
+                setting
+            }
+        }
     }
 
     override suspend fun setBuiltinToolEnabled(
@@ -107,5 +118,19 @@ class XRepoRuntimeGateway(
 
     override suspend fun listExecutionRules(): List<RuntimeExecutionRule> {
         return repo.executionRules.list()
+    }
+
+    private companion object {
+        /**
+         * Built-ins that can directly create outbound network activity or execute
+         * arbitrary code capable of doing so. Privacy mode disables them at the
+         * runtime capability-exposure boundary regardless of persisted UI state.
+         */
+        val PRIVACY_MODE_BLOCKED_BUILTINS = setOf(
+            "terminal",
+            "execute_python",
+            "py_download_file",
+            "open_uri",
+        )
     }
 }
