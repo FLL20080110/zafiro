@@ -57,7 +57,8 @@ class ShellCommandSafetyPolicy(
                         )
                     )
                 ) {
-                    ToolPermissionResponse.ALLOWED -> Unit
+                    ToolPermissionResponse.ALLOWED,
+                    ToolPermissionResponse.ALLOWED_TEMPORARY -> Unit
                     ToolPermissionResponse.DENIED_BY_USER -> {
                         return ShellCommandPolicyDecision(
                             allowed = false,
@@ -125,7 +126,8 @@ class ShellCommandSafetyPolicy(
                         )
                     )
                 ) {
-                    ToolPermissionResponse.ALLOWED -> continue
+                    ToolPermissionResponse.ALLOWED,
+                    ToolPermissionResponse.ALLOWED_TEMPORARY -> continue
                     ToolPermissionResponse.DENIED_BY_USER -> return blocked.copy(
                         code = "CONFIRM_DENIED",
                         reason = "The user denied this operation.",
