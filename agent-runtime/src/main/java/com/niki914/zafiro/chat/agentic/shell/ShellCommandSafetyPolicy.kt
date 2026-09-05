@@ -16,6 +16,14 @@ data class ShellCommandPolicyDecision(
     val matchedPattern: String? = null,
 )
 
+/**
+ * Local, model-independent safety gate for shell execution.
+ *
+ * User-defined execution rules are still evaluated, but a minimum built-in
+ * policy is always applied first. This prevents a fresh installation with no
+ * rules from silently executing destructive commands suggested by an LLM,
+ * imported skill, MCP server, or prompt-injected page.
+ */
 class ShellCommandSafetyPolicy(
     private val listExecutionRules: suspend () -> List<ExecutionRule> = {
         RuntimeEnvironment.awaitSettingsGateway().listExecutionRules()
@@ -23,6 +31,59 @@ class ShellCommandSafetyPolicy(
     private val isUnlocked: suspend () -> Boolean = { LockState.isUnlocked() },
 ) {
     suspend fun evaluate(command: String, toolName: String): ShellCommandPolicyDecision {
+        val candidates = command.matchCandidates()
+
+        // Hard safety floor: these checks cannot be disabled by deleting all
+        // user-defined execution rules.
+        when (val builtIn = candidates.evaluateBuiltInProtection()) {
+            is BuiltInProtection.Deny -> {
+                return ShellCommandPolicyDecision(
+                    allowed = false,
+                    code = "BUILTIN_CRITICAL_BLOCKED",
+                    reason = builtIn.reason,
+                    matchedRuleName = builtIn.name,
+                    matchedPattern = builtIn.pattern,
+                )
+            }
+
+            is BuiltInProtection.Confirm -> {
+                when (
+                    ToolPermissionCoordinator.confirm(
+                        ToolPermissionRequest(
+                            id = UUID.randomUUID().toString(),
+                            toolName = toolName,
+                            command = command,
+                            matchedRuleName = builtIn.name,
+                        )
+                    )
+                ) {
+                    ToolPermissionResponse.ALLOWED -> Unit
+                    ToolPermissionResponse.DENIED_BY_USER -> {
+                        return ShellCommandPolicyDecision(
+                            allowed = false,
+                            code = "BUILTIN_CONFIRM_DENIED",
+                            reason = "The user denied a sensitive shell operation.",
+                            matchedRuleName = builtIn.name,
+                            matchedPattern = builtIn.pattern,
+                        )
+                    }
+
+                    ToolPermissionResponse.DENIED_UNAVAILABLE -> {
+                        return ShellCommandPolicyDecision(
+                            allowed = false,
+                            code = "BUILTIN_CONFIRM_UNAVAILABLE",
+                            reason = "This sensitive shell operation requires explicit user confirmation, " +
+                                    "but the current session cannot display a confirmation prompt.",
+                            matchedRuleName = builtIn.name,
+                            matchedPattern = builtIn.pattern,
+                        )
+                    }
+                }
+            }
+
+            BuiltInProtection.Allow -> Unit
+        }
+
         val rules = listExecutionRules()
         if (rules.isEmpty()) {
             return ShellCommandPolicyDecision(allowed = true)
@@ -32,7 +93,6 @@ class ShellCommandSafetyPolicy(
         } else {
             true
         }
-        val candidates = command.matchCandidates()
         for (rule in rules.filter { it.isActive(unlocked) }) {
             val pattern = rule.patterns.asSequence()
                 .map(String::trim)
@@ -92,6 +152,28 @@ class ShellCommandSafetyPolicy(
             command = command,
             matchedRuleName = matchedRuleName.orEmpty(),
         )
+    }
+
+    private fun List<String>.evaluateBuiltInProtection(): BuiltInProtection {
+        for (candidate in this) {
+            val normalized = candidate.lowercase().replace(WHITESPACE_REGEX, " ").trim()
+
+            CRITICAL_PATTERNS.firstOrNull { it.regex.containsMatchIn(normalized) }?.let { rule ->
+                return BuiltInProtection.Deny(
+                    name = rule.name,
+                    pattern = rule.label,
+                    reason = rule.reason,
+                )
+            }
+
+            SENSITIVE_PATTERNS.firstOrNull { it.regex.containsMatchIn(normalized) }?.let { rule ->
+                return BuiltInProtection.Confirm(
+                    name = rule.name,
+                    pattern = rule.label,
+                )
+            }
+        }
+        return BuiltInProtection.Allow
     }
 
     private fun String.shellLikeTokens(): List<String> {
@@ -204,9 +286,125 @@ class ShellCommandSafetyPolicy(
         }
     }
 
+    private sealed interface BuiltInProtection {
+        data object Allow : BuiltInProtection
+
+        data class Confirm(
+            val name: String,
+            val pattern: String,
+        ) : BuiltInProtection
+
+        data class Deny(
+            val name: String,
+            val pattern: String,
+            val reason: String,
+        ) : BuiltInProtection
+    }
+
+    private data class BuiltInPattern(
+        val name: String,
+        val label: String,
+        val reason: String,
+        val regex: Regex,
+    )
+
     companion object {
         private const val MAX_SHELL_PAYLOAD_DEPTH = 8
         private val SHELL_TOKEN_SEPARATORS = setOf(';', '&', '|', '`', '$', '(', ')', '<', '>')
         private val SHELL_COMMANDS = setOf("sh", "bash", "mksh")
+        private val WHITESPACE_REGEX = Regex("\\s+")
+
+        /**
+         * Catastrophic operations are denied rather than confirmed. The agent
+         * should use a dedicated, structured action in a future advanced mode
+         * if the user explicitly needs one of these operations.
+         */
+        private val CRITICAL_PATTERNS = listOf(
+            BuiltInPattern(
+                name = "Critical: filesystem format",
+                label = "mkfs/wipefs",
+                reason = "Formatting or wiping a filesystem is blocked for AI shell execution.",
+                regex = Regex("\\b(?:mkfs(?:\\.[a-z0-9_+.-]+)?|wipefs)\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Critical: raw block write",
+                label = "dd -> /dev/block",
+                reason = "Raw writes to block devices are blocked for AI shell execution.",
+                regex = Regex("\\bdd\\b[^\\n;&|]*\\bof\\s*=\\s*/dev/(?:block/)?", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Critical: boot/system flashing",
+                label = "fastboot/flash_image erase or flash",
+                reason = "Flashing or erasing boot/system partitions is blocked for AI shell execution.",
+                regex = Regex("\\b(?:fastboot\\s+(?:flash|erase|format)|flash_image)\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Critical: disable SELinux",
+                label = "setenforce 0",
+                reason = "Disabling SELinux is blocked for AI shell execution.",
+                regex = Regex("\\bsetenforce\\s+0\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Critical: protected partition delete",
+                label = "rm on protected Android partitions",
+                reason = "Deleting files from boot/system/vendor/product/odm/recovery is blocked for AI shell execution.",
+                regex = Regex("\\brm\\b[^\\n;&|]*(?:/system|/vendor|/product|/odm|/boot|/recovery)(?:/|\\s|$)", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Critical: protected partition remount",
+                label = "mount protected Android partitions",
+                reason = "Mounting or remounting protected Android partitions is blocked for AI shell execution.",
+                regex = Regex("\\bmount\\b[^\\n;&|]*(?:/system|/vendor|/product|/odm|/boot)(?:/|\\s|$)", RegexOption.IGNORE_CASE),
+            ),
+        )
+
+        /**
+         * Reversible but privacy/security-impacting commands require an explicit
+         * user decision even when the execution-rule list is empty.
+         */
+        private val SENSITIVE_PATTERNS = listOf(
+            BuiltInPattern(
+                name = "Sensitive: file mutation",
+                label = "rm/mv/chmod/chown/chgrp",
+                reason = "",
+                regex = Regex("\\b(?:rm|mv|chmod|chown|chgrp)\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: app/package management",
+                label = "pm/cmd package/appops/dpm",
+                reason = "",
+                regex = Regex("\\b(?:pm|appops|dpm)\\b|\\bcmd\\s+package\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: system settings",
+                label = "settings/setprop",
+                reason = "",
+                regex = Regex("\\b(?:settings|setprop)\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: process/device control",
+                label = "kill/reboot/shutdown/force-stop",
+                reason = "",
+                regex = Regex("\\b(?:kill|pkill|killall|reboot|shutdown|poweroff)\\b|\\bam\\s+force-stop\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: privilege escalation",
+                label = "su/magisk",
+                reason = "",
+                regex = Regex("(?:^|\\s)(?:su|magisk)(?:\\s|$)", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: network transfer",
+                label = "curl/wget",
+                reason = "",
+                regex = Regex("\\b(?:curl|wget)\\b", RegexOption.IGNORE_CASE),
+            ),
+            BuiltInPattern(
+                name = "Sensitive: network policy",
+                label = "iptables/nft/ip route/ip rule",
+                reason = "",
+                regex = Regex("\\b(?:iptables|ip6tables|nft)\\b|\\bip\\s+(?:route|rule)\\b", RegexOption.IGNORE_CASE),
+            ),
+        )
     }
 }
