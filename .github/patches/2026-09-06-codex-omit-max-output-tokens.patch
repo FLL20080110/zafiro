@@ -1,0 +1,39 @@
+diff --git a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+--- a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
++++ b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+@@ -130,7 +130,10 @@ class OpenAIResponsesProtocol(
+             snapshot.systemPrompt?.let { put("instructions", it) }
+             put("stream", true)
+             put("store", false)
+-            put("max_output_tokens", snapshot.maxTokens)
++            // ChatGPT account / Codex backend rejects max_output_tokens.
++            if (snapshot.endpoint.substringBefore('?').trimEnd('/') != "https://chatgpt.com/backend-api/codex/responses") {
++                put("max_output_tokens", snapshot.maxTokens)
++            }
+             put("temperature", snapshot.temperature)
+             if (snapshot.tools.isNotEmpty()) {
+                 put("tools", buildJsonArray { snapshot.tools.forEach { add(convertTool(it)) } })
+diff --git a/libs/okia/src/test/java/com/niki914/okia/protocol/OpenAIResponsesProtocolTest.kt b/libs/okia/src/test/java/com/niki914/okia/protocol/OpenAIResponsesProtocolTest.kt
+--- a/libs/okia/src/test/java/com/niki914/okia/protocol/OpenAIResponsesProtocolTest.kt
++++ b/libs/okia/src/test/java/com/niki914/okia/protocol/OpenAIResponsesProtocolTest.kt
+@@ -104,6 +104,18 @@ class OpenAIResponsesProtocolTest {
+         assertEquals("你简短", json["instructions"]!!.jsonPrimitive.content)
+     }
+ 
++    @Test
++    fun chatGptCodexRequestOmitsUnsupportedMaxOutputTokens() {
++        val request = protocol.buildRequest(
++            snapshot(
++                endpoint = "https://chatgpt.com/backend-api/codex/responses",
++                model = "gpt-5.5",
++            ),
++            listOf(user("你好"))
++        )
++        val json = body(request)
++        assertEquals(false, json["store"]!!.jsonPrimitive.content.toBoolean())
++        assertNull(json["max_output_tokens"])
++    }
++
+     @Test
+     fun inputMapsUserAndAssistantAndToolRoundtrip() {
+         val request = protocol.buildRequest(
