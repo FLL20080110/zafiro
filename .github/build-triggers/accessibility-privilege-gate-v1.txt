@@ -1,0 +1,1 @@
+Trigger debug APK build after gating indirect Root/Shizuku accessibility and screen-control shell paths.
