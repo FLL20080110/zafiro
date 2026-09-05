@@ -438,6 +438,15 @@ private fun ToolPermissionDialog() {
                         color = if (reversible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                     )
                 }
+                if (request.temporaryGrantScopeKey != null &&
+                    (request.temporaryGrantDurationMs ?: 0L) > 0L
+                ) {
+                    Text(
+                        text = "临时授权：5分钟内仅允许完全相同的命令",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
@@ -464,18 +473,44 @@ private fun ToolPermissionDialog() {
         actions = {
             MaterialTintLiquidButton(
                 text = stringResource(R.string.tool_permission_deny),
-                onClick = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
+                onClick = {
+                    ToolPermissionCoordinator.respond(
+                        request.id,
+                        com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.DENIED_BY_USER,
+                    )
+                },
                 modifier = Modifier.weight(1f),
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             )
             MaterialTintLiquidButton(
-                text = stringResource(R.string.tool_permission_allow),
-                onClick = { ToolPermissionCoordinator.respond(request.id, allowed = true) },
+                text = "允许一次",
+                onClick = {
+                    ToolPermissionCoordinator.respond(
+                        request.id,
+                        com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.ALLOWED,
+                    )
+                },
                 modifier = Modifier.weight(1f),
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             )
+            if (request.temporaryGrantScopeKey != null &&
+                (request.temporaryGrantDurationMs ?: 0L) > 0L
+            ) {
+                MaterialTintLiquidButton(
+                    text = "5分钟",
+                    onClick = {
+                        ToolPermissionCoordinator.respond(
+                            request.id,
+                            com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.ALLOWED_TEMPORARY,
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
+                )
+            }
         },
     )
 }
