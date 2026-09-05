@@ -34,6 +34,10 @@ internal fun ProviderAccessSettingsBlock(
 ) {
     var showProtocolDialog by rememberSaveable { mutableStateOf(false) }
 
+    if (uiState.providerSpec.id == "openai") {
+        OpenAiExperimentalLoginBlock()
+    }
+
     SettingsGroupCard {
         if (showNameField) {
             SettingExpandableTextItem(
