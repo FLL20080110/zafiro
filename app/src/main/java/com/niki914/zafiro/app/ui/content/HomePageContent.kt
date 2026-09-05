@@ -363,6 +363,85 @@ fun HomePageContent(
     )
 
     ToolPermissionDialog()
+    SensitiveTakeoverNotice()
+}
+
+/**
+ * 敏感页面由本地策略引擎触发人工接管。前台显示提示，后台发通知。
+ * 关闭提示只隐藏 UI，不解除安全状态；只有检测到页面已离开敏感上下文后
+ * SensitiveContextGuard 才会自动清除阻断。
+ */
+@Composable
+private fun SensitiveTakeoverNotice() {
+    val context = LocalContext.current
+    val state by com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextGuard.state.collectAsState()
+    var dismissedDetectionAt by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(state.active, state.detectedAtEpochMs) {
+        if (!state.active) {
+            dismissedDetectionAt = null
+            return@LaunchedEffect
+        }
+        if (MainActivity.isResumed) return@LaunchedEffect
+        XIpcBridge.postNotification(
+            context = context,
+            title = "AI 已暂停，需要你接管",
+            content = "检测到密码、验证码或支付等敏感页面。请手动完成该步骤后再让 AI 继续。",
+            uri = null,
+            client = null,
+        )
+    }
+
+    if (!state.active || dismissedDetectionAt == state.detectedAtEpochMs) return
+
+    val kindText = when (state.kind) {
+        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.PASSWORD -> "密码页面"
+        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.OTP -> "验证码页面"
+        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.PAYMENT -> "支付/转账页面"
+        null -> "敏感页面"
+    }
+
+    LiquidDialog(
+        visible = true,
+        onDismissRequest = { dismissedDetectionAt = state.detectedAtEpochMs },
+        dismissOnBackgroundTap = false,
+        title = {
+            Text(
+                text = "需要你接管",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "检测到：$kindText",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "AI 已停止读取和操作当前页面，也不会把该页面的 UI 树发送给模型。请在目标 App 中手动完成敏感步骤。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "完成并离开敏感页面后，再告诉 AI“继续”。安全状态会在下一次本地检查确认页面安全后自动解除。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        actions = {
+            MaterialTintLiquidButton(
+                text = "知道了",
+                onClick = { dismissedDetectionAt = state.detectedAtEpochMs },
+                modifier = Modifier.weight(1f),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        },
+    )
 }
 
 /**
