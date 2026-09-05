@@ -1,0 +1,15 @@
+diff --git a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+--- a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
++++ b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+@@ -166,7 +166,10 @@ class OpenAIResponsesProtocol(
+             snapshot.systemPrompt?.let { put("instructions", it) }
+             put("stream", true)
+             put("store", false)
+-            put("max_output_tokens", snapshot.maxTokens)
++            // ChatGPT account / Codex backend rejects max_output_tokens.
++            if (snapshot.endpoint.substringBefore('?').trimEnd('/') != "https://chatgpt.com/backend-api/codex/responses") {
++                put("max_output_tokens", snapshot.maxTokens)
++            }
+             put("temperature", snapshot.temperature)
+             if (snapshot.tools.isNotEmpty()) {
+                 put("tools", buildJsonArray { snapshot.tools.forEach { add(convertTool(it)) } })
