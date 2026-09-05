@@ -1,0 +1,52 @@
+name: Apply Sensitive Takeover UI V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/apply-sensitive-takeover-ui-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-sensitive-takeover-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Apply deterministic takeover UI transform
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt')
+          text = path.read_text()
+
+          old_call = '''    ToolPermissionDialog()\n}\n\n/**\n * CONFIRM 型执行规则的用户确认对话框'''
+          new_call = '''    ToolPermissionDialog()\n    SensitiveTakeoverNotice()\n}\n\n/**\n * 敏感页面由本地策略引擎触发人工接管。前台显示提示，后台发通知。\n * 关闭提示只隐藏 UI，不解除安全状态；只有检测到页面已离开敏感上下文后\n * SensitiveContextGuard 才会自动清除阻断。\n */\n@Composable\nprivate fun SensitiveTakeoverNotice() {\n    val context = LocalContext.current\n    val state by com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextGuard.state.collectAsState()\n    var dismissedDetectionAt by remember { mutableStateOf<Long?>(null) }\n\n    LaunchedEffect(state.active, state.detectedAtEpochMs) {\n        if (!state.active) {\n            dismissedDetectionAt = null\n            return@LaunchedEffect\n        }\n        if (MainActivity.isResumed) return@LaunchedEffect\n        XIpcBridge.postNotification(\n            context = context,\n            title = "AI 已暂停，需要你接管",\n            content = "检测到密码、验证码或支付等敏感页面。请手动完成该步骤后再让 AI 继续。",\n            uri = null,\n            client = null,\n        )\n    }\n\n    if (!state.active || dismissedDetectionAt == state.detectedAtEpochMs) return\n\n    val kindText = when (state.kind) {\n        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.PASSWORD -> "密码页面"\n        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.OTP -> "验证码页面"\n        com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextKind.PAYMENT -> "支付/转账页面"\n        null -> "敏感页面"\n    }\n\n    LiquidDialog(\n        visible = true,\n        onDismissRequest = { dismissedDetectionAt = state.detectedAtEpochMs },\n        dismissOnBackgroundTap = false,\n        title = {\n            Text(\n                text = "需要你接管",\n                style = MaterialTheme.typography.headlineSmall,\n                color = MaterialTheme.colorScheme.error,\n                modifier = Modifier.fillMaxWidth(),\n            )\n        },\n        text = {\n            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {\n                Text(\n                    text = "检测到：$kindText",\n                    style = MaterialTheme.typography.bodyMedium,\n                    color = MaterialTheme.colorScheme.onSurface,\n                )\n                Text(\n                    text = "AI 已停止读取和操作当前页面，也不会把该页面的 UI 树发送给模型。请在目标 App 中手动完成敏感步骤。",\n                    style = MaterialTheme.typography.bodyMedium,\n                    color = MaterialTheme.colorScheme.onSurfaceVariant,\n                )\n                Text(\n                    text = "完成并离开敏感页面后，再告诉 AI“继续”。安全状态会在下一次本地检查确认页面安全后自动解除。",\n                    style = MaterialTheme.typography.bodySmall,\n                    color = MaterialTheme.colorScheme.onSurfaceVariant,\n                )\n            }\n        },\n        actions = {\n            MaterialTintLiquidButton(\n                text = "知道了",\n                onClick = { dismissedDetectionAt = state.detectedAtEpochMs },\n                modifier = Modifier.weight(1f),\n                containerColor = MaterialTheme.colorScheme.primary,\n                contentColor = MaterialTheme.colorScheme.onPrimary,\n            )\n        },\n    )\n}\n\n/**\n * CONFIRM 型执行规则的用户确认对话框'''
+          count = text.count(old_call)
+          if count != 1:
+              raise SystemExit(f'sensitive takeover insertion: expected 1 match, found {count}')
+          text = text.replace(old_call, new_call, 1)
+          path.write_text(text)
+          PY
+
+      - name: Commit transformed UI
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No takeover UI changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+          git commit -m 'ui: add sensitive-context user takeover notice'
+          git push origin "HEAD:${{ github.ref_name }}"
