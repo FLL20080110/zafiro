@@ -7,6 +7,8 @@ data class RuntimeLlmConfig(
     val model: String = "",
     /** LlmProtocol.wireId，如 "openai-responses"。空串回落默认协议。 */
     val protocol: String = "",
+    /** Additional request headers supplied by the host runtime bridge. */
+    val headers: Map<String, String> = emptyMap(),
     val prompt: String = "",
     val proxy: String = "",
     val memoryPrompt: String = "",
