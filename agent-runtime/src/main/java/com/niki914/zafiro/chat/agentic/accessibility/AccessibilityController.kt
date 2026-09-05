@@ -23,12 +23,20 @@ import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.nod
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.refreshNodeCache
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEventType
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.TerminalCommandOutcome
 import com.niki914.zafiro.chat.agentic.shell.TerminalOpenOutcome
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRiskLevel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.security.SecureRandom
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import android.graphics.Rect as AndroidRect
@@ -167,10 +175,68 @@ object AccessibilityController {
         return SensitiveContextGuard.requireSafe(root, appPackage)
     }
 
+    /**
+     * Any Root/Shizuku path initiated indirectly by a screen tool must pass the
+     * same explicit local approval boundary as direct terminal execution.
+     * These bootstrap/fallback approvals are deliberately allow-once only.
+     */
+    private suspend fun confirmPrivilegedScreenShell(
+        identity: String,
+        purpose: String,
+    ): Boolean {
+        if (identity != "root" && identity != "shizuku") return true
+
+        val commandSummary = "$purpose using ${identity.uppercase()}"
+        SecurityAuditLog.record(
+            SecurityAuditEvent(
+                type = SecurityAuditEventType.PRIVILEGED_REQUEST,
+                toolName = "screen_operation",
+                executionIdentity = identity,
+                command = commandSummary,
+                riskLevel = ToolPermissionRiskLevel.HIGH,
+                detail = "Indirect privileged screen-control path",
+            )
+        )
+
+        val response = ToolPermissionCoordinator.confirm(
+            ToolPermissionRequest(
+                id = UUID.randomUUID().toString(),
+                toolName = "screen_operation",
+                command = commandSummary,
+                matchedRuleName = "Privileged ${identity.uppercase()} screen control",
+                riskLevel = ToolPermissionRiskLevel.HIGH,
+                executionIdentity = identity,
+                reason = "Zafiro needs elevated Android privileges for screen-control setup or fallback.",
+                reversible = true,
+            )
+        )
+
+        val allowed = response == ToolPermissionResponse.ALLOWED ||
+            response == ToolPermissionResponse.ALLOWED_TEMPORARY
+        SecurityAuditLog.record(
+            SecurityAuditEvent(
+                type = if (allowed) {
+                    SecurityAuditEventType.PRIVILEGED_ALLOWED
+                } else {
+                    SecurityAuditEventType.PRIVILEGED_DENIED
+                },
+                toolName = "screen_operation",
+                executionIdentity = identity,
+                command = commandSummary,
+                riskLevel = ToolPermissionRiskLevel.HIGH,
+                detail = if (allowed) "Allowed once for indirect screen-control path." else "Indirect privileged screen-control path denied.",
+            )
+        )
+        return allowed
+    }
+
     private suspend fun ensureShellSession(): ShellIdentity {
         if (shellIdentity != ShellIdentity.NONE) return shellIdentity
 
         for (identity in listOf("root", "shizuku", "user")) {
+            if (!confirmPrivilegedScreenShell(identity, "Open screen-control shell fallback")) {
+                continue
+            }
             when (val outcome = TerminalSessionPool.open(identity)) {
                 is TerminalOpenOutcome.Success -> {
                     shellSessionHandle = outcome.session
@@ -213,6 +279,9 @@ object AccessibilityController {
         // a non-root shell whose settings commands return non-zero.
         var canWriteSettings = false
         for (identity in listOf("root", "shizuku")) {
+            if (!confirmPrivilegedScreenShell(identity, "Enable Zafiro Accessibility Service")) {
+                continue
+            }
             val openOutcome = TerminalSessionPool.openAndExecute(
                 identity = identity,
                 cwd = null,
