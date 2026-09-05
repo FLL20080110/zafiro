@@ -1,0 +1,133 @@
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ToolPermissionCoordinator.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ToolPermissionCoordinator.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ToolPermissionCoordinator.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ToolPermissionCoordinator.kt
+@@ -10,12 +10,22 @@ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.asStateFlow
+ 
++enum class ToolPermissionRiskLevel { LOW, MEDIUM, HIGH, CRITICAL }
++
+ /** 一次工具执行确认请求（UI 展示字段）。 */
+ data class ToolPermissionRequest(
+     val id: String,
+     val toolName: String,
+     val command: String,
+     val matchedRuleName: String,
++    val riskLevel: ToolPermissionRiskLevel = ToolPermissionRiskLevel.MEDIUM,
++    val executionIdentity: String? = null,
++    val reason: String? = null,
++    val reversible: Boolean? = null,
+ )
+ 
+ /** 确认请求终态：允许 / 用户拒绝 / 无确认渠道（宿主路径）拒绝。 */
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
+@@ -29,11 +29,12 @@ class ShellCommandSafetyPolicy(
+     private val isUnlocked: suspend () -> Boolean = { LockState.isUnlocked() },
+ ) {
+-    suspend fun evaluate(command: String, toolName: String): ShellCommandPolicyDecision {
++    suspend fun evaluate(command: String, toolName: String, executionIdentity: String? = null): ShellCommandPolicyDecision {
+         val candidates = command.matchCandidates()
+ 
+         // Hard safety floor: these checks cannot be disabled by deleting all
+         // user-defined execution rules.
+-        when (val builtIn = candidates.evaluateBuiltInProtection()) {
++        val builtIn = candidates.evaluateBuiltInProtection()
++        when (builtIn) {
+             is BuiltInProtection.Deny -> {
+                 return ShellCommandPolicyDecision(
+                     allowed = false,
+@@ -45,8 +46,51 @@ class ShellCommandSafetyPolicy(
+                 )
+             }
+ 
+-            is BuiltInProtection.Confirm -> {
++            else -> Unit
++        }
++
++        // Privilege level is an independent trust boundary. A harmless-looking
++        // command still requires explicit approval when the requested execution
++        // identity is ROOT or SHIZUKU. This mirrors Android runtime permission
++        // semantics: capability first, command second. Catastrophic commands
++        // were already hard-blocked above and can never be approved here.
++        val privilegedIdentity = executionIdentity
++            ?.trim()
++            ?.lowercase()
++            ?.takeIf { it == "root" || it == "shizuku" }
++        if (privilegedIdentity != null) {
++            when (
++                ToolPermissionCoordinator.confirm(
++                    ToolPermissionRequest(
++                        id = UUID.randomUUID().toString(),
++                        toolName = toolName,
++                        command = command,
++                        matchedRuleName = "Privileged ${privilegedIdentity.uppercase()} execution",
++                        riskLevel = ToolPermissionRiskLevel.HIGH,
++                        executionIdentity = privilegedIdentity,
++                        reason = "The AI requested execution with elevated Android privileges.",
++                        reversible = null,
++                    )
++                )
++            ) {
++                ToolPermissionResponse.ALLOWED -> Unit
++                ToolPermissionResponse.DENIED_BY_USER -> {
++                    return ShellCommandPolicyDecision(
++                        allowed = false,
++                        code = "PRIVILEGED_IDENTITY_DENIED",
++                        reason = "The user denied privileged $privilegedIdentity execution.",
++                        matchedRuleName = "Privileged ${privilegedIdentity.uppercase()} execution",
++                        matchedPattern = privilegedIdentity,
++                    )
++                }
++                ToolPermissionResponse.DENIED_UNAVAILABLE -> {
++                    return ShellCommandPolicyDecision(
++                        allowed = false,
++                        code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
++                        reason = "Privileged $privilegedIdentity execution requires explicit user confirmation, " +
++                                "but the current session cannot display a confirmation prompt.",
++                        matchedRuleName = "Privileged ${privilegedIdentity.uppercase()} execution",
++                        matchedPattern = privilegedIdentity,
++                    )
++                }
++            }
++        } else if (builtIn is BuiltInProtection.Confirm) {
+                 when (
+                     ToolPermissionCoordinator.confirm(
+                         ToolPermissionRequest(
+@@ -54,6 +98,10 @@ class ShellCommandSafetyPolicy(
+                             toolName = toolName,
+                             command = command,
+                             matchedRuleName = builtIn.name,
++                            riskLevel = ToolPermissionRiskLevel.HIGH,
++                            executionIdentity = executionIdentity ?: "user",
++                            reason = "Sensitive shell operation requires explicit confirmation.",
++                            reversible = null,
+                         )
+                     )
+                 ) {
+@@ -82,9 +130,6 @@ class ShellCommandSafetyPolicy(
+                         )
+                     }
+                 }
+-            }
+-
+-            BuiltInProtection.Allow -> Unit
+         }
+ 
+         val rules = listExecutionRules()
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+@@ -111,7 +111,11 @@ class TerminalBuiltin(
+     private suspend fun handleCommand(args: TerminalArgs): String {
+         val command = args.requireCommand()
+         val timeoutSec = args.resolveTimeout()
+-        val decision = safetyPolicy.evaluate(command, toolName = name)
++        val executionIdentity = when (args.backend) {
++            Backend.LOCAL -> args.identity ?: DEFAULT_LOCAL_IDENTITY
++            Backend.SSH -> "ssh"
++        }
++        val decision = safetyPolicy.evaluate(command, toolName = name, executionIdentity = executionIdentity)
+         if (!decision.allowed) {
+             return TerminalToolResponse.policyBlocked(decision)
+         }
