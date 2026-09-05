@@ -20,6 +20,21 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
 
+        // com.github.Kyant0 artifacts are published by JitPack. Keep this group
+        // exclusive to JitPack so a transient 5xx from an unrelated mirror
+        // cannot abort dependency resolution before Gradle reaches JitPack.
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "JitPackKyant0"
+                    url = uri("https://jitpack.io")
+                }
+            }
+            filter {
+                includeGroup("com.github.Kyant0")
+            }
+        }
+
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
