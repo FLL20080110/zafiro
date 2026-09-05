@@ -1,0 +1,2 @@
+Build the ChatGPT/Codex OAuth compatibility fix that omits temperature.
+Source commit: e80193a6c66f5f659c8be6ba9c2a89bc33953882
