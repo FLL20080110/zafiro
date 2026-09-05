@@ -16,6 +16,7 @@ data class ResolvedLlmConfig(
     val baseSystemPrompt: String,
     val finalSystemPrompt: String,
     val proxy: String = "",
+    val headers: Map<String, String> = emptyMap(),
     val idleTimeoutSeconds: Long? = 60L,
     val retryMaxAttempts: Int = 3,
 )
