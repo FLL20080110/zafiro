@@ -207,6 +207,7 @@ object LLMController {
             baseSystemPrompt = llmConfig.prompt,
             finalSystemPrompt = llmConfig.prompt,
             proxy = llmConfig.proxy,
+            headers = llmConfig.headers,
             idleTimeoutSeconds = llmConfig.idleTimeoutSeconds,
             retryMaxAttempts = llmConfig.retryMaxAttempts,
         )
@@ -218,6 +219,7 @@ object LLMController {
             endpoint = configWithoutRuntimePrompt.endpoint
             apiKey = configWithoutRuntimePrompt.apiKey
             model = configWithoutRuntimePrompt.model
+            headers = configWithoutRuntimePrompt.headers
             // 热更新超时/重试策略：实例复用时也要跟随设置变化，否则改设置要冷启才生效
             idleTimeoutSeconds = configWithoutRuntimePrompt.idleTimeoutSeconds
                 ?: NO_IDLE_TIMEOUT_SECONDS
@@ -605,6 +607,7 @@ object LLMController {
             this.endpoint = endpoint
             apiKey = config.apiKey
             model = config.model
+            headers = config.headers
             hooks += killToolResourcesHook
             // null = 不超时（General Settings 提供「不限时」选项）
             idleTimeoutSeconds = config.idleTimeoutSeconds ?: NO_IDLE_TIMEOUT_SECONDS
