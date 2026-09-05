@@ -1,0 +1,2 @@
+Build trigger for ChatGPT/Codex OAuth compatibility.
+Source parent includes conditional omission of max_output_tokens for https://chatgpt.com/backend-api/codex/responses.
