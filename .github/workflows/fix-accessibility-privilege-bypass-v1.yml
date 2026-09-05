@@ -1,0 +1,76 @@
+name: Fix Accessibility Privilege Bypass V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/fix-accessibility-privilege-bypass-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix-accessibility-privilege-bypass:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Gate privileged accessibility shell paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt')
+          text = path.read_text()
+
+          old_imports = '''import com.niki914.zafiro.chat.agentic.shell.TerminalCommandOutcome\nimport com.niki914.zafiro.chat.agentic.shell.TerminalOpenOutcome\nimport com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool\n'''
+          new_imports = '''import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent\nimport com.niki914.zafiro.chat.agentic.shell.SecurityAuditEventType\nimport com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog\nimport com.niki914.zafiro.chat.agentic.shell.TerminalCommandOutcome\nimport com.niki914.zafiro.chat.agentic.shell.TerminalOpenOutcome\nimport com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool\nimport com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator\nimport com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest\nimport com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse\nimport com.niki914.zafiro.chat.agentic.shell.ToolPermissionRiskLevel\n'''
+          if text.count(old_imports) != 1:
+              raise SystemExit('shell import anchor mismatch')
+          text = text.replace(old_imports, new_imports, 1)
+
+          old_java = '''import java.security.SecureRandom\nimport java.util.concurrent.ConcurrentHashMap\n'''
+          new_java = '''import java.security.SecureRandom\nimport java.util.UUID\nimport java.util.concurrent.ConcurrentHashMap\n'''
+          if text.count(old_java) != 1:
+              raise SystemExit('java import anchor mismatch')
+          text = text.replace(old_java, new_java, 1)
+
+          anchor = '''    private suspend fun ensureShellSession(): ShellIdentity {\n'''
+          helper = '''    /**\n     * Any Root/Shizuku path initiated indirectly by a screen tool must pass the\n     * same explicit local approval boundary as direct terminal execution.\n     * These bootstrap/fallback approvals are deliberately allow-once only.\n     */\n    private suspend fun confirmPrivilegedScreenShell(\n        identity: String,\n        purpose: String,\n    ): Boolean {\n        if (identity != "root" && identity != "shizuku") return true\n\n        val commandSummary = "$purpose using ${identity.uppercase()}"\n        SecurityAuditLog.record(\n            SecurityAuditEvent(\n                type = SecurityAuditEventType.PRIVILEGED_REQUEST,\n                toolName = "screen_operation",\n                executionIdentity = identity,\n                command = commandSummary,\n                riskLevel = ToolPermissionRiskLevel.HIGH,\n                detail = "Indirect privileged screen-control path",\n            )\n        )\n\n        val response = ToolPermissionCoordinator.confirm(\n            ToolPermissionRequest(\n                id = UUID.randomUUID().toString(),\n                toolName = "screen_operation",\n                command = commandSummary,\n                matchedRuleName = "Privileged ${identity.uppercase()} screen control",\n                riskLevel = ToolPermissionRiskLevel.HIGH,\n                executionIdentity = identity,\n                reason = "Zafiro needs elevated Android privileges for screen-control setup or fallback.",\n                reversible = true,\n            )\n        )\n\n        val allowed = response == ToolPermissionResponse.ALLOWED ||\n            response == ToolPermissionResponse.ALLOWED_TEMPORARY\n        SecurityAuditLog.record(\n            SecurityAuditEvent(\n                type = if (allowed) {\n                    SecurityAuditEventType.PRIVILEGED_ALLOWED\n                } else {\n                    SecurityAuditEventType.PRIVILEGED_DENIED\n                },\n                toolName = "screen_operation",\n                executionIdentity = identity,\n                command = commandSummary,\n                riskLevel = ToolPermissionRiskLevel.HIGH,\n                detail = if (allowed) "Allowed once for indirect screen-control path." else "Indirect privileged screen-control path denied.",\n            )\n        )\n        return allowed\n    }\n\n''' + anchor
+          if text.count(anchor) != 1:
+              raise SystemExit('ensureShellSession anchor mismatch')
+          text = text.replace(anchor, helper, 1)
+
+          old_fallback_loop = '''        for (identity in listOf("root", "shizuku", "user")) {\n            when (val outcome = TerminalSessionPool.open(identity)) {\n'''
+          new_fallback_loop = '''        for (identity in listOf("root", "shizuku", "user")) {\n            if (!confirmPrivilegedScreenShell(identity, "Open screen-control shell fallback")) {\n                continue\n            }\n            when (val outcome = TerminalSessionPool.open(identity)) {\n'''
+          if text.count(old_fallback_loop) != 1:
+              raise SystemExit('fallback shell loop anchor mismatch')
+          text = text.replace(old_fallback_loop, new_fallback_loop, 1)
+
+          old_bootstrap_loop = '''        var canWriteSettings = false\n        for (identity in listOf("root", "shizuku")) {\n            val openOutcome = TerminalSessionPool.openAndExecute(\n'''
+          new_bootstrap_loop = '''        var canWriteSettings = false\n        for (identity in listOf("root", "shizuku")) {\n            if (!confirmPrivilegedScreenShell(identity, "Enable Zafiro Accessibility Service")) {\n                continue\n            }\n            val openOutcome = TerminalSessionPool.openAndExecute(\n'''
+          if text.count(old_bootstrap_loop) != 1:
+              raise SystemExit('accessibility bootstrap loop anchor mismatch')
+          text = text.replace(old_bootstrap_loop, new_bootstrap_loop, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit bypass fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No privilege-bypass changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt
+          git commit -m 'security: gate indirect Root and Shizuku screen-control paths'
+          git push origin "HEAD:${{ github.ref_name }}"
