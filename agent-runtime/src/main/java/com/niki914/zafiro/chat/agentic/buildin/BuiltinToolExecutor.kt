@@ -1,5 +1,6 @@
 package com.niki914.zafiro.chat.agentic.buildin
 
+import com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
@@ -37,6 +38,14 @@ class BuiltinToolExecutor(
         tool: BuiltinTool,
         argumentsJson: String,
     ): String {
+        if (AgentEmergencyStop.isActive()) {
+            return BuiltinToolResult.failure(
+                code = "AGENT_EMERGENCY_STOP_ACTIVE",
+                message = "Agent tool execution is disabled by the local emergency stop.",
+                hint = "The user must explicitly resume agent execution in the app before retrying.",
+            ).toJsonString()
+        }
+
         privilegedTerminalGate(tool, argumentsJson)?.let { return it }
 
         if (tool is RawJsonBuiltinTool) {
