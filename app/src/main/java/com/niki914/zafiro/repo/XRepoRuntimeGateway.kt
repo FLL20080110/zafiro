@@ -1,5 +1,6 @@
 package com.niki914.zafiro.repo
 
+import com.niki914.store.StoreDescriptorRegistry
 import com.niki914.zafiro.settings.MemoryMutationResult
 import com.niki914.zafiro.settings.RuntimeSettingsGateway
 import com.niki914.zafiro.settings.model.RuntimeBuiltinToolSetting
@@ -8,12 +9,18 @@ import com.niki914.zafiro.settings.model.RuntimeExecutionRule
 import com.niki914.zafiro.settings.model.RuntimeLlmConfig
 import com.niki914.zafiro.settings.model.RuntimeLoadedSkill
 import com.niki914.zafiro.settings.model.RuntimeMcpServer
+import com.niki914.zafiro.settings.model.RuntimePrivacyPolicy
 import com.niki914.zafiro.settings.model.RuntimeSkillMetadata
 import com.niki914.zafiro.settings.model.RuntimeToolValidation
 
 class XRepoRuntimeGateway(
     private val repo: XRepo = XRepo,
 ) : RuntimeSettingsGateway {
+    override suspend fun readPrivacyPolicy(): RuntimePrivacyPolicy {
+        val state = AppStateSettingsCodec.parse(repo.readJson(StoreDescriptorRegistry.APP_STATE_ID))
+        return RuntimePrivacyPolicy(enabled = state.privacyModeEnabled)
+    }
+
     override suspend fun readLlmConfig(agentId: String): RuntimeLlmConfig {
         val doc = repo.llmConfigs.document()
         val active = doc.activeConfig()
@@ -32,7 +39,10 @@ class XRepoRuntimeGateway(
         )
     }
 
-    override suspend fun listMcpServers(): List<RuntimeMcpServer> = repo.mcp.list()
+    override suspend fun listMcpServers(): List<RuntimeMcpServer> {
+        if (!readPrivacyPolicy().allowMcp) return emptyList()
+        return repo.mcp.list()
+    }
 
     override suspend fun listEnabledSkills(): List<RuntimeSkillMetadata> {
         return repo.skills.listEnabled()
@@ -43,14 +53,17 @@ class XRepoRuntimeGateway(
     }
 
     override suspend fun addMemory(value: String) {
+        check(readPrivacyPolicy().allowMemoryWrites) { "Memory writes are disabled by privacy mode." }
         repo.memory.add(value)
     }
 
     override suspend fun removeMemory(oldText: String): MemoryMutationResult {
+        check(readPrivacyPolicy().allowMemoryWrites) { "Memory writes are disabled by privacy mode." }
         return repo.memory.removeByText(oldText)
     }
 
     override suspend fun replaceMemory(oldText: String, content: String): MemoryMutationResult {
+        check(readPrivacyPolicy().allowMemoryWrites) { "Memory writes are disabled by privacy mode." }
         return repo.memory.replaceByText(oldText, content)
     }
 
