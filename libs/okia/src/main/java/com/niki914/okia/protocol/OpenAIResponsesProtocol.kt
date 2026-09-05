@@ -171,7 +171,10 @@ class OpenAIResponsesProtocol(
             if (snapshot.endpoint.substringBefore('?').trimEnd('/') != "https://chatgpt.com/backend-api/codex/responses") {
                 put("max_output_tokens", snapshot.maxTokens)
             }
-            put("temperature", snapshot.temperature)
+            // ChatGPT account / Codex backend also rejects temperature.
+            if (snapshot.endpoint.substringBefore('?').trimEnd('/') != "https://chatgpt.com/backend-api/codex/responses") {
+                put("temperature", snapshot.temperature)
+            }
             if (snapshot.tools.isNotEmpty()) {
                 put("tools", buildJsonArray { snapshot.tools.forEach { add(convertTool(it)) } })
             }
