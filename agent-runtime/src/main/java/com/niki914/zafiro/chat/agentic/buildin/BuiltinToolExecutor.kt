@@ -1,6 +1,9 @@
 package com.niki914.zafiro.chat.agentic.buildin
 
 import com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEventType
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
@@ -119,6 +122,16 @@ class BuiltinToolExecutor(
 
         val command = args.stringValue("command") ?: "(terminal command)"
         val ruleName = "Privileged ${identity.uppercase()} execution"
+        SecurityAuditLog.record(
+            SecurityAuditEvent(
+                type = SecurityAuditEventType.PRIVILEGED_REQUEST,
+                toolName = tool.name,
+                executionIdentity = identity,
+                command = command,
+                riskLevel = ToolPermissionRiskLevel.HIGH,
+                detail = ruleName,
+            )
+        )
         val response = ToolPermissionCoordinator.confirm(
             ToolPermissionRequest(
                 id = UUID.randomUUID().toString(),
@@ -133,19 +146,55 @@ class BuiltinToolExecutor(
         )
 
         return when (response) {
-            ToolPermissionResponse.ALLOWED -> null
-            ToolPermissionResponse.DENIED_BY_USER -> BuiltinToolResult.failure(
-                code = "PRIVILEGED_IDENTITY_DENIED",
-                message = "The user denied privileged $identity execution.",
-                hint = "Retry with identity=\"user\" or ask the user to approve the privileged operation.",
-            ).toJsonString()
+            ToolPermissionResponse.ALLOWED -> {
+                SecurityAuditLog.record(
+                    SecurityAuditEvent(
+                        type = SecurityAuditEventType.PRIVILEGED_ALLOWED,
+                        toolName = tool.name,
+                        executionIdentity = identity,
+                        command = command,
+                        riskLevel = ToolPermissionRiskLevel.HIGH,
+                    )
+                )
+                null
+            }
 
-            ToolPermissionResponse.DENIED_UNAVAILABLE -> BuiltinToolResult.failure(
-                code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
-                message = "Privileged $identity execution requires explicit user confirmation, " +
-                        "but this session cannot display a confirmation prompt.",
-                hint = "Use an interactive UI session or retry with identity=\"user\".",
-            ).toJsonString()
+            ToolPermissionResponse.DENIED_BY_USER -> {
+                SecurityAuditLog.record(
+                    SecurityAuditEvent(
+                        type = SecurityAuditEventType.PRIVILEGED_DENIED,
+                        toolName = tool.name,
+                        executionIdentity = identity,
+                        command = command,
+                        riskLevel = ToolPermissionRiskLevel.HIGH,
+                        detail = "Denied by user or emergency stop.",
+                    )
+                )
+                BuiltinToolResult.failure(
+                    code = "PRIVILEGED_IDENTITY_DENIED",
+                    message = "The user denied privileged $identity execution.",
+                    hint = "Retry with identity=\"user\" or ask the user to approve the privileged operation.",
+                ).toJsonString()
+            }
+
+            ToolPermissionResponse.DENIED_UNAVAILABLE -> {
+                SecurityAuditLog.record(
+                    SecurityAuditEvent(
+                        type = SecurityAuditEventType.PRIVILEGED_DENIED,
+                        toolName = tool.name,
+                        executionIdentity = identity,
+                        command = command,
+                        riskLevel = ToolPermissionRiskLevel.HIGH,
+                        detail = "Confirmation channel unavailable.",
+                    )
+                )
+                BuiltinToolResult.failure(
+                    code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
+                    message = "Privileged $identity execution requires explicit user confirmation, " +
+                            "but this session cannot display a confirmation prompt.",
+                    hint = "Use an interactive UI session or retry with identity=\"user\".",
+                ).toJsonString()
+            }
         }
     }
 
