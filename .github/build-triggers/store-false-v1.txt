@@ -1,0 +1,2 @@
+Build trigger for ChatGPT Codex OAuth store=false fix.
+Source patch applied in parent commit 7232bb757219743e858d73f2023763ef9c34bfaa.
