@@ -4,6 +4,7 @@ import com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEventType
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.TemporaryGrantStore
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
@@ -92,9 +93,11 @@ class BuiltinToolExecutor(
     /**
      * Root and Shizuku are capability boundaries, not merely command syntax.
      * Every local terminal command which requests either identity must receive a
-     * fresh explicit user approval before the tool is invoked. The terminal's
-     * existing command safety policy still runs afterwards, so catastrophic
-     * commands remain hard-blocked even after privilege approval.
+     * fresh explicit user approval before the tool is invoked, unless the user
+     * has explicitly granted the exact same tool + identity + command a short
+     * process-local TTL grant. The terminal's existing command safety policy
+     * still runs afterwards, so catastrophic commands remain hard-blocked even
+     * after privilege approval or temporary privilege reuse.
      */
     private suspend fun privilegedTerminalGate(
         tool: BuiltinTool,
@@ -121,7 +124,15 @@ class BuiltinToolExecutor(
         if (identity != "root" && identity != "shizuku") return null
 
         val command = args.stringValue("command") ?: "(terminal command)"
+        val normalizedCommand = command.trim()
         val ruleName = "Privileged ${identity.uppercase()} execution"
+        val temporaryScopeKey = TemporaryGrantStore.scopeKey(
+            "terminal",
+            "local",
+            identity,
+            normalizedCommand,
+        )
+
         SecurityAuditLog.record(
             SecurityAuditEvent(
                 type = SecurityAuditEventType.PRIVILEGED_REQUEST,
@@ -142,6 +153,9 @@ class BuiltinToolExecutor(
                 executionIdentity = identity,
                 reason = "The AI requested execution with elevated Android privileges.",
                 reversible = null,
+                temporaryGrantScopeKey = temporaryScopeKey,
+                temporaryGrantDurationMs = TemporaryGrantStore.FIVE_MINUTES_MS,
+                temporaryGrantLabel = "Allow the exact same ${identity.uppercase()} command for 5 minutes",
             )
         )
 
@@ -154,6 +168,21 @@ class BuiltinToolExecutor(
                         executionIdentity = identity,
                         command = command,
                         riskLevel = ToolPermissionRiskLevel.HIGH,
+                        detail = "Allowed once by user.",
+                    )
+                )
+                null
+            }
+
+            ToolPermissionResponse.ALLOWED_TEMPORARY -> {
+                SecurityAuditLog.record(
+                    SecurityAuditEvent(
+                        type = SecurityAuditEventType.PRIVILEGED_ALLOWED,
+                        toolName = tool.name,
+                        executionIdentity = identity,
+                        command = command,
+                        riskLevel = ToolPermissionRiskLevel.HIGH,
+                        detail = "Allowed by an exact-command 5-minute temporary grant.",
                     )
                 )
                 null
