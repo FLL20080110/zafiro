@@ -27,7 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.niki914.uikit.infra.component.SettingsGroupCard
 import com.niki914.uikit.infra.component.SettingsListItem
-import com.niki914.zafiro.openai.auth.OpenAiAuthRepository
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.openai.auth.OpenAiDeviceCodeSession
 import com.niki914.zafiro.openai.auth.OpenAiLoginResult
 import kotlinx.coroutines.delay
@@ -35,13 +35,16 @@ import kotlinx.coroutines.launch
 
 /**
  * Experimental ChatGPT/Codex account login entry shown only for the OpenAI
- * provider. API-key configuration remains available and unchanged below it.
+ * provider. API-key configuration remains available as a stable fallback.
  */
 @Composable
-internal fun OpenAiExperimentalLoginBlock() {
+internal fun OpenAiExperimentalLoginBlock(
+    isManagedOAuth: Boolean,
+    onManagedOAuthChanged: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val repository = remember(context) { OpenAiAuthRepository(context.applicationContext) }
+    val repository = remember { OpenAiAuthHolder.requireRepository() }
 
     var account by remember { mutableStateOf(repository.currentAccount()) }
     var session by remember { mutableStateOf<OpenAiDeviceCodeSession?>(null) }
@@ -66,7 +69,8 @@ internal fun OpenAiExperimentalLoginBlock() {
             title = "ChatGPT / Codex 登录（实验性）",
             currentState = when {
                 starting -> "正在获取验证码…"
-                account != null -> account?.email ?: "已登录"
+                account != null && isManagedOAuth -> "已启用 · ${account?.email ?: "已登录"}"
+                account != null -> "已登录 · ${account?.email ?: "点击启用"}"
                 else -> "未登录"
             },
             showChevron = true,
@@ -101,6 +105,7 @@ internal fun OpenAiExperimentalLoginBlock() {
                 }
                 is OpenAiLoginResult.Success -> {
                     account = result.account
+                    onManagedOAuthChanged(true)
                     errorMessage = null
                     session = null
                 }
@@ -129,7 +134,7 @@ internal fun OpenAiExperimentalLoginBlock() {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        text = "授权后此页面会自动检测登录状态。此方式使用实验性的 Codex 设备认证接口，可能随上游变化失效。",
+                        text = "授权后会自动检测登录并将当前 OpenAI 配置切换到 ChatGPT/Codex 模式。此方式依赖实验性的 Codex 设备认证接口，可能随上游变化失效。",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     errorMessage?.let {
@@ -198,13 +203,23 @@ internal fun OpenAiExperimentalLoginBlock() {
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        repository.logout()
-                        account = null
-                        showAccountDialog = false
-                    },
-                ) { Text("退出登录") }
+                if (isManagedOAuth) {
+                    TextButton(
+                        onClick = {
+                            onManagedOAuthChanged(false)
+                            repository.logout()
+                            account = null
+                            showAccountDialog = false
+                        },
+                    ) { Text("退出登录") }
+                } else {
+                    TextButton(
+                        onClick = {
+                            onManagedOAuthChanged(true)
+                            showAccountDialog = false
+                        },
+                    ) { Text("使用此账号") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showAccountDialog = false }) { Text("关闭") }
