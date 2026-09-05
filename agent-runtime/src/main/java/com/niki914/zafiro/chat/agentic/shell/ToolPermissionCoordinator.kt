@@ -73,4 +73,11 @@ object ToolPermissionCoordinator {
             if (allowed) ToolPermissionResponse.ALLOWED else ToolPermissionResponse.DENIED_BY_USER
         )
     }
+
+    /** 急停时立即拒绝当前挂起请求，避免 Agent 永久卡在等待确认状态。 */
+    fun denyPendingForEmergencyStop() {
+        val request = pendingFlow.value ?: return
+        Logger.i(LOG_TAG, "confirm denied emergency_stop id=${request.id}")
+        deferred?.complete(ToolPermissionResponse.DENIED_BY_USER)
+    }
 }
