@@ -1,0 +1,2 @@
+Build security stage 2 integration.
+Includes privileged identity confirmation, risk UI, emergency stop, and audit events.
