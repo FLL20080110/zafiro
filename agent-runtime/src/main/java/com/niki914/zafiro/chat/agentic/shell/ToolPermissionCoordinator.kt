@@ -24,13 +24,8 @@ data class ToolPermissionRequest(
     val temporaryGrantMillis: Long? = null,
 )
 
-/** 确认请求终态：允许一次 / 临时允许 / 用户拒绝 / 无确认渠道（宿主路径）拒绝。 */
-enum class ToolPermissionResponse {
-    ALLOWED,
-    ALLOWED_TEMPORARY,
-    DENIED_BY_USER,
-    DENIED_UNAVAILABLE,
-}
+/** 确认请求终态：允许 / 用户拒绝 / 无确认渠道（宿主路径）拒绝。 */
+enum class ToolPermissionResponse { ALLOWED, DENIED_BY_USER, DENIED_UNAVAILABLE }
 
 /**
  * CONFIRM 型执行规则的用户确认协调器。
@@ -64,7 +59,7 @@ object ToolPermissionCoordinator {
 
         if (hasActiveTemporaryGrant(request)) {
             Logger.i(LOG_TAG, "confirm temporary grant hit id=${request.id} tool=${request.toolName}")
-            return ToolPermissionResponse.ALLOWED_TEMPORARY
+            return ToolPermissionResponse.ALLOWED
         }
 
         Logger.i(LOG_TAG, "confirm requested id=${request.id} tool=${request.toolName}")
@@ -103,7 +98,7 @@ object ToolPermissionCoordinator {
             temporaryGrantExpiryNanos[key] = expiresAt
         }
         Logger.i(LOG_TAG, "temporary grant stored id=${request.id} tool=${request.toolName} ttlMs=$ttlMillis")
-        deferred?.complete(ToolPermissionResponse.ALLOWED_TEMPORARY)
+        deferred?.complete(ToolPermissionResponse.ALLOWED)
     }
 
     /** 供急停、隐私模式或未来账号切换时主动清空临时授权。 */
