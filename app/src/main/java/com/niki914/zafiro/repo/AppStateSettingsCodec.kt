@@ -25,6 +25,8 @@ internal data class AppStateSettings(
     val llmIdleTimeoutSeconds: Long = 60L,
     /** 传输层自动重试次数。 */
     val llmRetryMaxAttempts: Int = 3,
+    /** 隐私模式：禁用云端 LLM、MCP 与记忆写入等外发/持久化能力。 */
+    val privacyModeEnabled: Boolean = false,
 )
 
 internal object AppStateSettingsCodec {
@@ -44,6 +46,7 @@ internal object AppStateSettingsCodec {
             themeSeedColor = root.string(THEME_SEED_COLOR_KEY).ifBlank { "FF52DBC9" },
             llmIdleTimeoutSeconds = root.long(LLM_IDLE_TIMEOUT_KEY, default = 60L),
             llmRetryMaxAttempts = root.int(LLM_RETRY_ATTEMPTS_KEY, default = 3),
+            privacyModeEnabled = root.boolean(PRIVACY_MODE_ENABLED_KEY, default = false),
         )
     }
 
@@ -60,6 +63,7 @@ internal object AppStateSettingsCodec {
                 THEME_SEED_COLOR_KEY to JsonPrimitive(state.themeSeedColor),
                 LLM_IDLE_TIMEOUT_KEY to JsonPrimitive(state.llmIdleTimeoutSeconds),
                 LLM_RETRY_ATTEMPTS_KEY to JsonPrimitive(state.llmRetryMaxAttempts),
+                PRIVACY_MODE_ENABLED_KEY to JsonPrimitive(state.privacyModeEnabled),
             )
         ).toString()
     }
@@ -74,4 +78,5 @@ internal object AppStateSettingsCodec {
     private const val THEME_SEED_COLOR_KEY = "theme_seed_color"
     private const val LLM_IDLE_TIMEOUT_KEY = "llm_idle_timeout_seconds"
     private const val LLM_RETRY_ATTEMPTS_KEY = "llm_retry_max_attempts"
+    private const val PRIVACY_MODE_ENABLED_KEY = "privacy_mode_enabled"
 }
