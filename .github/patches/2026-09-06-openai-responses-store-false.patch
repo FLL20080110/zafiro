@@ -1,0 +1,11 @@
+diff --git a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+--- a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
++++ b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
+@@ -162,6 +162,7 @@ class OpenAIResponsesProtocol(
+             })
+             snapshot.systemPrompt?.let { put("instructions", it) }
+             put("stream", true)
++            put("store", false)
+             put("max_output_tokens", snapshot.maxTokens)
+             put("temperature", snapshot.temperature)
+             if (snapshot.tools.isNotEmpty()) {
