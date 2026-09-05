@@ -1,0 +1,57 @@
+name: Apply ChatGPT Source Patches
+
+on:
+  push:
+    branches:
+      - 'chatgpt/**'
+    paths:
+      - '.github/patches/**.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patches:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Configure Git
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Apply unapplied patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          changed=0
+          for patch in .github/patches/*.patch; do
+            echo "Checking $patch"
+            if git apply --check "$patch" 2>/dev/null; then
+              git apply "$patch"
+              changed=1
+              echo "Applied $patch"
+            elif git apply --reverse --check "$patch" 2>/dev/null; then
+              echo "Already applied: $patch"
+            else
+              echo "Patch cannot be applied cleanly: $patch" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$changed" -eq 0 ]; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+
+          git add -A
+          git commit -m 'security: apply queued ChatGPT source patches'
+          git push origin "HEAD:${{ github.ref_name }}"
