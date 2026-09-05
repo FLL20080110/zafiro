@@ -9,6 +9,7 @@ import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.repo.UpdateCheckHolder
 import com.niki914.zafiro.repo.XRepo
 import com.niki914.zafiro.runtime.createAppRuntimeBridge
@@ -30,6 +31,7 @@ class App : Application() {
         //（否则 ContextProvider 从未 provide，PyRuntime.warmUp 会永远挂起）
         if (isPythonWorkerProcess()) return
         ContextProvider.provide(applicationContext)
+        OpenAiAuthHolder.init(applicationContext)
         XRepo.init(this.applicationContext)
         ConversationRepo.init(this.applicationContext)
         // T3：消息级增量持久化器（观察 LLMController 当前会话快照流，
