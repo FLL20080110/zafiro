@@ -1,0 +1,102 @@
+name: Apply Sensitive Context Core V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/apply-sensitive-context-core-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-sensitive-context-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Apply deterministic sensitive-context transforms
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          controller = Path('agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt')
+          text = controller.read_text()
+
+          anchor = '''    fun clearPointerOverlay() {\n        pointerOverlay?.dispose()\n        pointerOverlay = null\n        pointerShown = false\n    }\n\n'''
+          insert = anchor + '''    /**\n     * Best-effort page-level safety check for screen tools which can operate\n     * without first capturing a fresh accessibility tree. If Accessibility is\n     * not currently connected, this check does not auto-enable it just for\n     * detection; captureScreen/refreshNodeCache perform the mandatory check once\n     * the service is available.\n     */\n    suspend fun checkSensitiveContextIfAvailable(): Result<Unit> {\n        val service = serviceInstance ?: return Result.success(Unit)\n        val root = service.windowRoot ?: return Result.success(Unit)\n        val appPackage = root.packageName?.toString() ?: "unknown"\n        return SensitiveContextGuard.requireSafe(root, appPackage)\n    }\n\n'''
+          if text.count(anchor) != 1:
+              raise SystemExit('clearPointerOverlay anchor mismatch')
+          text = text.replace(anchor, insert, 1)
+
+          old_refresh = '''        val appPkg = root.packageName?.toString() ?: "unknown"\n\n        rebuildCache(root)\n'''
+          new_refresh = '''        val appPkg = root.packageName?.toString() ?: "unknown"\n\n        // Do not serialize or cache a sensitive page for model consumption.\n        SensitiveContextGuard.requireSafe(root, appPkg).getOrElse { throw it }\n\n        rebuildCache(root)\n'''
+          if text.count(old_refresh) != 1:
+              raise SystemExit('refreshNodeCache sensitive guard anchor mismatch')
+          text = text.replace(old_refresh, new_refresh, 1)
+
+          old_action = '''        ensureService().getOrElse { e ->\n            return BuiltinToolResult.failure(\n                "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"\n            )\n        }\n\n        val st = SemanticToken.parse(token).getOrElse {\n'''
+          new_action = '''        ensureService().getOrElse { e ->\n            return BuiltinToolResult.failure(\n                "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"\n            )\n        }\n\n        checkSensitiveContextIfAvailable().getOrElse { e ->\n            return BuiltinToolResult.failure(\n                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,\n                e.message ?: "Sensitive context detected. User takeover is required.",\n            )\n        }\n\n        val st = SemanticToken.parse(token).getOrElse {\n'''
+          if text.count(old_action) != 1:
+              raise SystemExit('executeNodeAction sensitive guard anchor mismatch')
+          text = text.replace(old_action, new_action, 1)
+          controller.write_text(text)
+
+          shell = Path('agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt')
+          text = shell.read_text()
+          old_shell = '''        val args = parseArguments(request.argumentsJson).getOrElse { error ->\n            val msg = error.message ?: "Invalid arguments JSON"\n            val code =\n                if (msg.startsWith("Unknown operation")) ScreenOperationError.INVALID_OPERATION.code else ScreenOperationError.INVALID_ARGUMENTS_JSON.code\n            return TextToolResult.failure(code, msg)\n        }\n\n        return when (val op = args.operation) {\n'''
+          new_shell = '''        val args = parseArguments(request.argumentsJson).getOrElse { error ->\n            val msg = error.message ?: "Invalid arguments JSON"\n            val code =\n                if (msg.startsWith("Unknown operation")) ScreenOperationError.INVALID_OPERATION.code else ScreenOperationError.INVALID_ARGUMENTS_JSON.code\n            return TextToolResult.failure(code, msg)\n        }\n\n        AccessibilityController.checkSensitiveContextIfAvailable().getOrElse { e ->\n            return TextToolResult.failure(\n                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,\n                e.message ?: "Sensitive context detected. User takeover is required.",\n            )\n        }\n\n        return when (val op = args.operation) {\n'''
+          if text.count(old_shell) != 1:
+              raise SystemExit('screen shell sensitive guard anchor mismatch')
+          text = text.replace(old_shell, new_shell, 1)
+          shell.write_text(text)
+
+          access = Path('agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt')
+          text = access.read_text()
+          old_import = '''import com.niki914.zafiro.chat.agentic.accessibility.ScreenSnapshot\n'''
+          new_import = old_import + '''import com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextBlockedException\n'''
+          if text.count(old_import) != 1:
+              raise SystemExit('accessibility builtin import anchor mismatch')
+          text = text.replace(old_import, new_import, 1)
+
+          old_read = '''                    onFailure = { e ->\n                        TextToolResult.failure(\n                            ScreenOperationError.SERVICE_UNAVAILABLE.code,\n                            // 给 LLM 的工具错误 fallback（模型消费的英文契约文本），非 UI 本地化文案，保持英文\n                            e.message ?: "Service unavailable",\n                        )\n                    },\n'''
+          new_read = '''                    onFailure = { e ->\n                        TextToolResult.failure(\n                            if (e is SensitiveContextBlockedException) {\n                                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code\n                            } else {\n                                ScreenOperationError.SERVICE_UNAVAILABLE.code\n                            },\n                            // 给 LLM 的工具错误 fallback（模型消费的英文契约文本），非 UI 本地化文案，保持英文\n                            e.message ?: "Service unavailable",\n                        )\n                    },\n'''
+          if text.count(old_read) != 1:
+              raise SystemExit('accessibility read failure anchor mismatch')
+          text = text.replace(old_read, new_read, 1)
+
+          old_search = '''                        onFailure = { e ->\n                            TextToolResult.failure(\n                                ScreenOperationError.SEARCH_FAILED.code,\n                                e.message ?: "Search failed",\n                            )\n                        },\n'''
+          new_search = '''                        onFailure = { e ->\n                            TextToolResult.failure(\n                                if (e is SensitiveContextBlockedException) {\n                                    ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code\n                                } else {\n                                    ScreenOperationError.SEARCH_FAILED.code\n                                },\n                                e.message ?: "Search failed",\n                            )\n                        },\n'''
+          if text.count(old_search) != 1:
+              raise SystemExit('accessibility search failure anchor mismatch')
+          text = text.replace(old_search, new_search, 1)
+
+          old_capture_failure = '''            onFailure = { e ->\n                TextToolResult.failure(\n                    code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,\n                    message = "The action may have succeeded, but the updated screen tree " +\n                            "could not be captured. Read the screen before deciding whether to " +\n                            "retry the action.",\n                )\n            },\n'''
+          new_capture_failure = '''            onFailure = { e ->\n                if (e is SensitiveContextBlockedException) {\n                    TextToolResult.failure(\n                        code = ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,\n                        message = e.message ?: "Sensitive context detected. User takeover is required.",\n                    )\n                } else {\n                    TextToolResult.failure(\n                        code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,\n                        message = "The action may have succeeded, but the updated screen tree " +\n                                "could not be captured. Read the screen before deciding whether to " +\n                                "retry the action.",\n                    )\n                }\n            },\n'''
+          if text.count(old_capture_failure) != 1:
+              raise SystemExit('accessibility post-action capture failure anchor mismatch')
+          text = text.replace(old_capture_failure, new_capture_failure, 1)
+          access.write_text(text)
+          PY
+
+      - name: Commit transformed core
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No sensitive-context core changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt \
+            agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt \
+            agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt
+          git commit -m 'security: gate screen automation on sensitive contexts'
+          git push origin "HEAD:${{ github.ref_name }}"
