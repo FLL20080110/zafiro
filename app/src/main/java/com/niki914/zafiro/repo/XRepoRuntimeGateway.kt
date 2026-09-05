@@ -92,9 +92,14 @@ class XRepoRuntimeGateway(
 
     override suspend fun listBuiltinToolSettings(): List<RuntimeBuiltinToolSetting> {
         val settings = repo.builtinTools.list()
-        if (readPrivacyPolicy().allowNetworkTools) return settings
+        val policy = readPrivacyPolicy()
+        if (policy.allowNetworkTools && policy.allowSensitiveContextUpload) return settings
         return settings.map { setting ->
-            if (setting.name in PRIVACY_MODE_BLOCKED_BUILTINS) {
+            val blockedByNetworkPolicy =
+                !policy.allowNetworkTools && setting.name in NETWORK_BLOCKED_BUILTINS
+            val blockedBySensitiveContextPolicy =
+                !policy.allowSensitiveContextUpload && setting.name in SENSITIVE_CONTEXT_BLOCKED_BUILTINS
+            if (blockedByNetworkPolicy || blockedBySensitiveContextPolicy) {
                 setting.copy(enabled = false)
             } else {
                 setting
@@ -123,14 +128,25 @@ class XRepoRuntimeGateway(
     private companion object {
         /**
          * Built-ins that can directly create outbound network activity or execute
-         * arbitrary code capable of doing so. Privacy mode disables them at the
+         * arbitrary code capable of doing so. Privacy policy disables them at the
          * runtime capability-exposure boundary regardless of persisted UI state.
          */
-        val PRIVACY_MODE_BLOCKED_BUILTINS = setOf(
+        val NETWORK_BLOCKED_BUILTINS = setOf(
             "terminal",
             "execute_python",
             "py_download_file",
             "open_uri",
+            "py_meta_tools",
+        )
+
+        /**
+         * Built-ins whose results can expose high-sensitivity device context to the
+         * model: accessibility UI trees, post-action screen snapshots, and images.
+         */
+        val SENSITIVE_CONTEXT_BLOCKED_BUILTINS = setOf(
+            "screen_operation_accessibility",
+            "screen_operation_shell",
+            "view_image",
         )
     }
 }
