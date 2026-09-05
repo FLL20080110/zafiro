@@ -34,7 +34,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
     // UI infra
-    implementation("com.github.Kyant0:Capsule:2.1.0")
+    // Capsule 2.1.1 has the same library source API as 2.1.0 and is the first
+    // release published to Maven Central under the io.github.kyant0 coordinate.
+    implementation("io.github.kyant0:capsule:2.1.1")
     implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.4.0")
