@@ -43,6 +43,13 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
             return TextToolResult.failure(code, msg)
         }
 
+        AccessibilityController.checkSensitiveContextIfAvailable().getOrElse { e ->
+            return TextToolResult.failure(
+                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,
+                e.message ?: "Sensitive context detected. User takeover is required.",
+            )
+        }
+
         return when (val op = args.operation) {
             is ScreenOp.ShellTap -> executeShellAndCapture(args.waitMode, args.waitMs) {
                 AccessibilityController.executeShellTap(op.x, op.y)

@@ -153,6 +153,20 @@ object AccessibilityController {
         pointerShown = false
     }
 
+    /**
+     * Best-effort page-level safety check for screen tools which can operate
+     * without first capturing a fresh accessibility tree. If Accessibility is
+     * not currently connected, this check does not auto-enable it just for
+     * detection; captureScreen/refreshNodeCache perform the mandatory check once
+     * the service is available.
+     */
+    suspend fun checkSensitiveContextIfAvailable(): Result<Unit> {
+        val service = serviceInstance ?: return Result.success(Unit)
+        val root = service.windowRoot ?: return Result.success(Unit)
+        val appPackage = root.packageName?.toString() ?: "unknown"
+        return SensitiveContextGuard.requireSafe(root, appPackage)
+    }
+
     private suspend fun ensureShellSession(): ShellIdentity {
         if (shellIdentity != ShellIdentity.NONE) return shellIdentity
 
@@ -466,6 +480,9 @@ object AccessibilityController {
         cachedScreenHeight = dm.heightPixels
         val appPkg = root.packageName?.toString() ?: "unknown"
 
+        // Do not serialize or cache a sensitive page for model consumption.
+        SensitiveContextGuard.requireSafe(root, appPkg).getOrElse { throw it }
+
         rebuildCache(root)
 
         currentVersion = nextVersion()
@@ -618,6 +635,13 @@ object AccessibilityController {
         ensureService().getOrElse { e ->
             return BuiltinToolResult.failure(
                 "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"
+            )
+        }
+
+        checkSensitiveContextIfAvailable().getOrElse { e ->
+            return BuiltinToolResult.failure(
+                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,
+                e.message ?: "Sensitive context detected. User takeover is required.",
             )
         }
 

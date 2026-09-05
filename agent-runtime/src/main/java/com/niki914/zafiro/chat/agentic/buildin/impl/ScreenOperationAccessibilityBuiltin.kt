@@ -3,6 +3,7 @@ package com.niki914.zafiro.chat.agentic.buildin.impl
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.NodeAction
 import com.niki914.zafiro.chat.agentic.accessibility.ScreenSnapshot
+import com.niki914.zafiro.chat.agentic.accessibility.SensitiveContextBlockedException
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
@@ -61,7 +62,11 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
                     onSuccess = { TextToolResult.success(it.yaml) },
                     onFailure = { e ->
                         TextToolResult.failure(
-                            ScreenOperationError.SERVICE_UNAVAILABLE.code,
+                            if (e is SensitiveContextBlockedException) {
+                                ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code
+                            } else {
+                                ScreenOperationError.SERVICE_UNAVAILABLE.code
+                            },
                             // 给 LLM 的工具错误 fallback（模型消费的英文契约文本），非 UI 本地化文案，保持英文
                             e.message ?: "Service unavailable",
                         )
@@ -96,7 +101,11 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
                         onSuccess = { TextToolResult.success(it) },
                         onFailure = { e ->
                             TextToolResult.failure(
-                                ScreenOperationError.SEARCH_FAILED.code,
+                                if (e is SensitiveContextBlockedException) {
+                                    ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code
+                                } else {
+                                    ScreenOperationError.SEARCH_FAILED.code
+                                },
                                 e.message ?: "Search failed",
                             )
                         },
@@ -141,12 +150,19 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         return capture.fold(
             onSuccess = { snapshot -> TextToolResult.success(snapshot.yaml) },
             onFailure = { e ->
-                TextToolResult.failure(
-                    code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,
-                    message = "The action may have succeeded, but the updated screen tree " +
-                            "could not be captured. Read the screen before deciding whether to " +
-                            "retry the action.",
-                )
+                if (e is SensitiveContextBlockedException) {
+                    TextToolResult.failure(
+                        code = ScreenOperationError.SENSITIVE_CONTEXT_USER_TAKEOVER_REQUIRED.code,
+                        message = e.message ?: "Sensitive context detected. User takeover is required.",
+                    )
+                } else {
+                    TextToolResult.failure(
+                        code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,
+                        message = "The action may have succeeded, but the updated screen tree " +
+                                "could not be captured. Read the screen before deciding whether to " +
+                                "retry the action.",
+                    )
+                }
             },
         )
     }
