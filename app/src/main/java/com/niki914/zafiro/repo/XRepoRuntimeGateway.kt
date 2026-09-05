@@ -22,6 +22,9 @@ class XRepoRuntimeGateway(
     }
 
     override suspend fun readLlmConfig(agentId: String): RuntimeLlmConfig {
+        check(readPrivacyPolicy().allowCloudLlm) {
+            "Cloud LLM access is disabled by privacy mode."
+        }
         val doc = repo.llmConfigs.document()
         val active = doc.activeConfig()
         val memories = repo.agents.memoriesFor(agentId)
