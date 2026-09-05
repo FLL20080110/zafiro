@@ -1,5 +1,6 @@
 name: Debug APK Build
 
+# Build the exact branch HEAD after any queued source patches have been applied.
 on:
   workflow_dispatch:
   pull_request:
