@@ -1,0 +1,84 @@
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+@@ -8,7 +8,12 @@ import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
+ import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
+ import com.niki914.zafiro.chat.agentic.buildin.RawJsonBuiltinTool
++import com.niki914.zafiro.chat.agentic.shell.ShellCommandPolicyDecision
+ import com.niki914.zafiro.chat.agentic.shell.ShellCommandSafetyPolicy
++import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
++import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
++import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
++import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRiskLevel
+ import com.niki914.zafiro.chat.agentic.shell.TerminalAsyncStartOutcome
+@@ -30,6 +35,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
+ import kotlinx.serialization.json.jsonPrimitive
+ import kotlinx.serialization.json.longOrNull
++import java.util.UUID
+ 
+ class TerminalBuiltin(
+@@ -112,11 +118,65 @@ class TerminalBuiltin(
+         val timeoutSec = args.resolveTimeout()
+         val decision = safetyPolicy.evaluate(command, toolName = name)
+         if (!decision.allowed) {
+             return TerminalToolResponse.policyBlocked(decision)
+         }
++
++        if (args.backend == Backend.LOCAL) {
++            val identity = (args.identity ?: DEFAULT_LOCAL_IDENTITY).trim().lowercase()
++            confirmPrivilegedIdentity(identity, command)?.let { return it }
++        }
+ 
+         return when (args.backend) {
+             Backend.LOCAL -> handleLocalCommand(args, command, timeoutSec)
+@@ -134,6 +194,54 @@ class TerminalBuiltin(
+         }
+     }
++
++    /**
++     * Root and Shizuku are capability boundaries, not merely command syntax.
++     * Every privileged local command therefore requires a fresh explicit user
++     * confirmation, even when the command itself looks read-only or harmless.
++     */
++    private suspend fun confirmPrivilegedIdentity(identity: String, command: String): String? {
++        if (identity != "root" && identity != "shizuku") return null
++
++        val ruleName = "Privileged ${identity.uppercase()} execution"
++        return when (
++            ToolPermissionCoordinator.confirm(
++                ToolPermissionRequest(
++                    id = UUID.randomUUID().toString(),
++                    toolName = name,
++                    command = command,
++                    matchedRuleName = ruleName,
++                    riskLevel = ToolPermissionRiskLevel.HIGH,
++                    executionIdentity = identity,
++                    reason = "The AI requested execution with elevated Android privileges.",
++                    reversible = null,
++                )
++            )
++        ) {
++            ToolPermissionResponse.ALLOWED -> null
++            ToolPermissionResponse.DENIED_BY_USER -> TerminalToolResponse.policyBlocked(
++                ShellCommandPolicyDecision(
++                    allowed = false,
++                    code = "PRIVILEGED_IDENTITY_DENIED",
++                    reason = "The user denied privileged $identity execution.",
++                    matchedRuleName = ruleName,
++                    matchedPattern = identity,
++                )
++            )
++            ToolPermissionResponse.DENIED_UNAVAILABLE -> TerminalToolResponse.policyBlocked(
++                ShellCommandPolicyDecision(
++                    allowed = false,
++                    code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
++                    reason = "Privileged $identity execution requires explicit user confirmation, " +
++                            "but this session cannot display a confirmation prompt.",
++                    matchedRuleName = ruleName,
++                    matchedPattern = identity,
++                )
++            )
++        }
++    }
+ 
+     private suspend fun handleLocalCommand(
