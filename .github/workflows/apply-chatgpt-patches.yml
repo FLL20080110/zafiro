@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - 'chatgpt/**'
-    paths:
-      - '.github/patches/**.patch'
   workflow_dispatch:
 
 permissions:
