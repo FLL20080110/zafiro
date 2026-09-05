@@ -13,6 +13,7 @@ import com.niki914.uikit.infra.component.SettingsItemDivider
 import com.niki914.uikit.infra.component.SettingsListItem
 import com.niki914.zafiro.app.R
 import com.niki914.zafiro.app.ui.model.ConfigureUiState
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.settings.model.LlmProtocol
 
 @Composable
@@ -33,9 +34,19 @@ internal fun ProviderAccessSettingsBlock(
     onClearActiveField: () -> Unit,
 ) {
     var showProtocolDialog by rememberSaveable { mutableStateOf(false) }
+    val isManagedOAuth = uiState.providerSpec.id == "openai" &&
+            uiState.apiKeyInput == OpenAiAuthHolder.MANAGED_API_KEY_SENTINEL
 
     if (uiState.providerSpec.id == "openai") {
-        OpenAiExperimentalLoginBlock()
+        OpenAiExperimentalLoginBlock(
+            isManagedOAuth = isManagedOAuth,
+            onManagedOAuthChanged = { enabled ->
+                onClearActiveField()
+                onApiKeyChange(
+                    if (enabled) OpenAiAuthHolder.MANAGED_API_KEY_SENTINEL else ""
+                )
+            },
+        )
     }
 
     SettingsGroupCard {
@@ -124,7 +135,6 @@ internal fun ProviderAccessSettingsBlock(
             },
         )
         SettingsItemDivider()
-        // 协议行：与 About version 行同款 Value Row 组件（点击弹选择弹窗）
         SettingsListItem(
             title = stringResource(R.string.ui_settings_configure_protocol_label),
             currentState = uiState.protocolWireId,
@@ -135,30 +145,39 @@ internal fun ProviderAccessSettingsBlock(
             },
         )
         SettingsItemDivider()
-        SettingExpandableTextItem(
-            title = stringResource(R.string.ui_onboard_configure_api_key_label),
-            value = uiState.apiKeyInput,
-            onValueChange = onApiKeyChange,
-            placeholder = stringResource(R.string.ui_onboard_configure_api_key_placeholder),
-            description = uiState.apiKeyErrorResId?.let { stringResource(it) },
-            enabled = !uiState.isSaving,
-            minLines = 1,
-            maxLines = 1,
-            secretVisible = uiState.apiKeyVisible,
-            onToggleSecretVisibility = onToggleApiKeyVisibility,
-            toggleSecretVisibleContentDescription = stringResource(
-                R.string.ui_onboard_configure_api_key_show,
-            ),
-            toggleSecretHiddenContentDescription = stringResource(
-                R.string.ui_onboard_configure_api_key_hide,
-            ),
-            expanded = expandedField == ConfigureEditableField.ApiKey,
-            onExpandedChange = { isExpanded ->
-                onExpandedFieldChange(
-                    if (isExpanded) ConfigureEditableField.ApiKey else null,
-                )
-            },
-        )
+        if (isManagedOAuth) {
+            SettingsListItem(
+                title = stringResource(R.string.ui_onboard_configure_api_key_label),
+                currentState = "由 ChatGPT 登录管理",
+                showChevron = false,
+                onClick = null,
+            )
+        } else {
+            SettingExpandableTextItem(
+                title = stringResource(R.string.ui_onboard_configure_api_key_label),
+                value = uiState.apiKeyInput,
+                onValueChange = onApiKeyChange,
+                placeholder = stringResource(R.string.ui_onboard_configure_api_key_placeholder),
+                description = uiState.apiKeyErrorResId?.let { stringResource(it) },
+                enabled = !uiState.isSaving,
+                minLines = 1,
+                maxLines = 1,
+                secretVisible = uiState.apiKeyVisible,
+                onToggleSecretVisibility = onToggleApiKeyVisibility,
+                toggleSecretVisibleContentDescription = stringResource(
+                    R.string.ui_onboard_configure_api_key_show,
+                ),
+                toggleSecretHiddenContentDescription = stringResource(
+                    R.string.ui_onboard_configure_api_key_hide,
+                ),
+                expanded = expandedField == ConfigureEditableField.ApiKey,
+                onExpandedChange = { isExpanded ->
+                    onExpandedFieldChange(
+                        if (isExpanded) ConfigureEditableField.ApiKey else null,
+                    )
+                },
+            )
+        }
         SettingsItemDivider()
         SettingExpandableTextItem(
             title = stringResource(R.string.ui_settings_configure_proxy_label),
@@ -178,7 +197,6 @@ internal fun ProviderAccessSettingsBlock(
         )
     }
 
-    // "deepseek" 协议与 openai-chat-completions 同壳，仅作存量存储值兼容，不再提供新选
     val selectableProtocols = LlmProtocol.entries.filter { it != LlmProtocol.DeepSeek }
     SingleChoiceLiquidDialog(
         visible = showProtocolDialog,
