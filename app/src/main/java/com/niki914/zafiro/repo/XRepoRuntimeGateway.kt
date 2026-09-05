@@ -3,6 +3,7 @@ package com.niki914.zafiro.repo
 import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.settings.MemoryMutationResult
 import com.niki914.zafiro.settings.RuntimeSettingsGateway
+import com.niki914.zafiro.settings.model.LlmProtocol
 import com.niki914.zafiro.settings.model.RuntimeBuiltinToolSetting
 import com.niki914.zafiro.settings.model.RuntimeCustomPyTool
 import com.niki914.zafiro.settings.model.RuntimeExecutionRule
@@ -35,8 +36,8 @@ class XRepoRuntimeGateway(
                 credential?.chatgptAccountId?.takeIf(String::isNotBlank)?.let {
                     put("chatgpt-account-id", it)
                 }
-                // Explicitly identify this experimental client instead of pretending
-                // to be the official Codex CLI.
+                // Identify this experimental client instead of pretending to be
+                // the official Codex CLI.
                 put("originator", "zafiro")
             }
         } else {
@@ -52,7 +53,11 @@ class XRepoRuntimeGateway(
             },
             apiKey = credential?.accessToken ?: active?.apiKey.orEmpty(),
             model = active?.model.orEmpty(),
-            protocol = active?.protocol.orEmpty(),
+            protocol = if (managedOAuth) {
+                LlmProtocol.OpenAiResponses.wireId
+            } else {
+                active?.protocol.orEmpty()
+            },
             headers = runtimeHeaders,
             proxy = active?.proxy.orEmpty(),
             prompt = doc.prompt,
