@@ -1,0 +1,75 @@
+name: Apply UI Security V1
+
+on:
+  push:
+    branches:
+      - 'chatgpt/openai-device-auth-v1'
+    paths:
+      - '.github/workflows/apply-ui-security-v1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-ui-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Apply deterministic UI transforms
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''    val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)\n    val uiState by viewModel.uiStateFlow.collectAsState()\n    val density = LocalDensity.current\n''',
+              '''    val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)\n    val uiState by viewModel.uiStateFlow.collectAsState()\n    val emergencyStopState by com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.state.collectAsState()\n    val density = LocalDensity.current\n''',
+              'emergency state',
+          )
+
+          replace_once(
+              '''        settingsMenuLabel,\n        historyContentDescription,\n    ) {\n''',
+              '''        settingsMenuLabel,\n        historyContentDescription,\n        emergencyStopState.active,\n    ) {\n''',
+              'remember dependency',
+          )
+
+          replace_once(
+              '''                PageChromeMenuItem(\n                    key = "settings",\n                    title = settingsMenuLabel,\n                    onClick = { latestOnOpenSettings() },\n                ),\n''',
+              '''                PageChromeMenuItem(\n                    key = "settings",\n                    title = settingsMenuLabel,\n                    onClick = { latestOnOpenSettings() },\n                ),\n                PageChromeMenuItem(\n                    key = "emergency_stop",\n                    title = if (emergencyStopState.active) "恢复 Agent" else "急停 Agent",\n                    onClick = {\n                        if (emergencyStopState.active) {\n                            com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.clear()\n                        } else {\n                            com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.activate(\n                                "Stopped by user from Home menu"\n                            )\n                            latestViewModel.sendIntent(HomeChatIntent.StopGenerating)\n                        }\n                    },\n                ),\n''',
+              'emergency menu',
+          )
+
+          marker = '''                Text(\n                    text = request.command,\n                    style = MaterialTheme.typography.bodySmall,\n'''
+          risk = '''                Text(\n                    text = "风险等级：${request.riskLevel.name}",\n                    style = MaterialTheme.typography.bodyMedium,\n                    color = if (request.riskLevel.name == "HIGH" || request.riskLevel.name == "CRITICAL") {\n                        MaterialTheme.colorScheme.error\n                    } else {\n                        MaterialTheme.colorScheme.onSurfaceVariant\n                    },\n                )\n                request.executionIdentity?.let { identity ->\n                    Text(\n                        text = "权限身份：${identity.uppercase()}",\n                        style = MaterialTheme.typography.bodyMedium,\n                        color = MaterialTheme.colorScheme.error,\n                    )\n                }\n                request.reason?.let { reason ->\n                    Text(\n                        text = "原因：$reason",\n                        style = MaterialTheme.typography.bodySmall,\n                        color = MaterialTheme.colorScheme.onSurfaceVariant,\n                    )\n                }\n                request.reversible?.let { reversible ->\n                    Text(\n                        text = if (reversible) "可逆性：可逆" else "可逆性：不可逆",\n                        style = MaterialTheme.typography.bodySmall,\n                        color = if (reversible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,\n                    )\n                }\n'''
+          replace_once(marker, risk + marker, 'risk card')
+
+          path.write_text(text)
+          PY
+
+      - name: Commit transformed UI
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'No UI changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+          git commit -m 'ui: add risk card and agent emergency stop toggle'
+          git push origin "HEAD:${{ github.ref_name }}"
