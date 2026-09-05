@@ -1,5 +1,6 @@
 package com.niki914.zafiro.repo
 
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.settings.MemoryMutationResult
 import com.niki914.zafiro.settings.RuntimeSettingsGateway
 import com.niki914.zafiro.settings.model.RuntimeBuiltinToolSetting
@@ -18,12 +19,41 @@ class XRepoRuntimeGateway(
         val doc = repo.llmConfigs.document()
         val active = doc.activeConfig()
         val memories = repo.agents.memoriesFor(agentId)
+        val managedOAuth = active != null && OpenAiAuthHolder.isManagedOAuth(
+            provider = active.provider,
+            apiKey = active.apiKey,
+        )
+        val credential = if (managedOAuth) {
+            OpenAiAuthHolder.requireRepository().getRuntimeCredential()
+                ?: error("ChatGPT / Codex 尚未登录，请先在 OpenAI 配置中完成登录")
+        } else {
+            null
+        }
+
+        val runtimeHeaders = if (managedOAuth) {
+            buildMap {
+                credential?.chatgptAccountId?.takeIf(String::isNotBlank)?.let {
+                    put("chatgpt-account-id", it)
+                }
+                // Explicitly identify this experimental client instead of pretending
+                // to be the official Codex CLI.
+                put("originator", "zafiro")
+            }
+        } else {
+            emptyMap()
+        }
+
         return RuntimeLlmConfig(
             provider = active?.provider.orEmpty(),
-            endpoint = active?.endpoint.orEmpty(),
-            apiKey = active?.apiKey.orEmpty(),
+            endpoint = if (managedOAuth) {
+                OpenAiAuthHolder.CODEX_RESPONSES_ENDPOINT
+            } else {
+                active?.endpoint.orEmpty()
+            },
+            apiKey = credential?.accessToken ?: active?.apiKey.orEmpty(),
             model = active?.model.orEmpty(),
             protocol = active?.protocol.orEmpty(),
+            headers = runtimeHeaders,
             proxy = active?.proxy.orEmpty(),
             prompt = doc.prompt,
             memories = memories,
