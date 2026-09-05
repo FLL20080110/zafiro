@@ -52,7 +52,14 @@ class XRepoRuntimeGateway(
                 active?.endpoint.orEmpty()
             },
             apiKey = credential?.accessToken ?: active?.apiKey.orEmpty(),
-            model = active?.model.orEmpty(),
+            // ChatGPT-account Codex does not accept every API model ID. Keep
+            // the user's configured model for API-key mode, but pin managed
+            // OAuth to the current broadly supported Codex model.
+            model = if (managedOAuth) {
+                "gpt-5.5"
+            } else {
+                active?.model.orEmpty()
+            },
             protocol = if (managedOAuth) {
                 LlmProtocol.OpenAiResponses.wireId
             } else {
