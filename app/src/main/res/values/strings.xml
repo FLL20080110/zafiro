@@ -186,6 +186,7 @@
     <string name="tool_permission_request_intro">工具「%1$s」请求执行以下命令：</string>
     <string name="tool_permission_matched_rule">命中规则「%1$s」</string>
     <string name="tool_permission_allow">允许本次</string>
+    <string name="tool_permission_allow_5_minutes">允许 5 分钟</string>
     <string name="tool_permission_deny">拒绝</string>
     <string name="tool_permission_notification_title">Zafiro 正在等待你的确认</string>
     <string name="tool_permission_notification_content">AI 请求执行被拦截的命令：%1$s。打开应用以允许或拒绝。</string>

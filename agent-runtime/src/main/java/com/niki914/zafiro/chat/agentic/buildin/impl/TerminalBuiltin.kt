@@ -111,6 +111,7 @@ class TerminalBuiltin(
                         toolName = name,
                         command = command,
                         matchedRuleName = "Privileged identity: $identity",
+                        temporaryGrantMillis = 5 * 60 * 1000L,
                     )
                 )
                 when (response) {

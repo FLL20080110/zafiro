@@ -423,6 +423,15 @@ private fun ToolPermissionDialog() {
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             )
+            if ((request.temporaryGrantMillis ?: 0L) > 0L) {
+                MaterialTintLiquidButton(
+                    text = stringResource(R.string.tool_permission_allow_5_minutes),
+                    onClick = { ToolPermissionCoordinator.respondTemporary(request.id) },
+                    modifier = Modifier.weight(1f),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
             MaterialTintLiquidButton(
                 text = stringResource(R.string.tool_permission_allow),
                 onClick = { ToolPermissionCoordinator.respond(request.id, allowed = true) },
