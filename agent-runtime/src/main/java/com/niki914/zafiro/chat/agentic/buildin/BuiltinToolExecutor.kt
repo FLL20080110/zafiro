@@ -1,6 +1,7 @@
 package com.niki914.zafiro.chat.agentic.buildin
 
 import com.niki914.zafiro.settings.RuntimeEnvironment
+import com.niki914.zafiro.settings.model.RuntimePrivacyPolicy
 import kotlinx.coroutines.CancellationException
 
 class BuiltinToolExecutor(
@@ -28,11 +29,11 @@ class BuiltinToolExecutor(
         tool: BuiltinTool,
         argumentsJson: String,
     ): String {
-        if (privacyModeBlocks(tool.name)) {
+        privacyBlockReason(tool.name)?.let { reason ->
             return BuiltinToolResult.failure(
-                code = "PRIVACY_MODE_NETWORK_TOOL_BLOCKED",
-                message = "Tool '${tool.name}' is disabled while privacy mode is enabled.",
-                hint = "Disable privacy mode before using tools that can create external network connections.",
+                code = "PRIVACY_MODE_BLOCKED",
+                message = reason,
+                hint = "Disable privacy mode only if you explicitly want to allow this capability.",
             ).toJsonString()
         }
 
@@ -74,17 +75,24 @@ class BuiltinToolExecutor(
         }
     }
 
-    private suspend fun privacyModeBlocks(toolName: String): Boolean {
-        if (toolName !in PRIVACY_BLOCKED_NETWORK_TOOLS) return false
+    private suspend fun privacyBlockReason(toolName: String): String? {
+        val policy = readPrivacyPolicyFailClosed()
+        if (!policy.allowNetworkTools && toolName in PRIVACY_BLOCKED_NETWORK_TOOLS) {
+            return "Tool '$toolName' is disabled because privacy mode blocks network-capable or arbitrary-code tools."
+        }
+        if (!policy.allowSensitiveContextUpload && toolName in PRIVACY_BLOCKED_SENSITIVE_CONTEXT_TOOLS) {
+            return "Tool '$toolName' is disabled because privacy mode blocks sensitive screen or image context from entering the model tool loop."
+        }
+        return null
+    }
 
+    private suspend fun readPrivacyPolicyFailClosed(): RuntimePrivacyPolicy {
         return try {
-            !RuntimeEnvironment.requireSettingsGateway()
-                .readPrivacyPolicy()
-                .allowNetworkTools
-        } catch (_: Throwable) {
-            // Fail closed for tools that can create an external network path if
-            // the privacy policy is temporarily unavailable or unreadable.
-            true
+            RuntimeEnvironment.requireSettingsGateway().readPrivacyPolicy()
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            // Fail closed when policy state is unavailable.
+            RuntimePrivacyPolicy(enabled = true)
         }
     }
 
@@ -95,6 +103,12 @@ class BuiltinToolExecutor(
             "py_meta_tools",
             "py_download_file",
             "open_uri",
+        )
+
+        val PRIVACY_BLOCKED_SENSITIVE_CONTEXT_TOOLS = setOf(
+            "screen_operation_accessibility",
+            "screen_operation_shell",
+            "view_image",
         )
     }
 }
