@@ -136,6 +136,7 @@ fun HomePageContent(
     )
     val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)
     val uiState by viewModel.uiStateFlow.collectAsState()
+    val emergencyStopState by com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.state.collectAsState()
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -224,6 +225,7 @@ fun HomePageContent(
         newConversationMenuLabel,
         settingsMenuLabel,
         historyContentDescription,
+        emergencyStopState.active,
     ) {
         PageChromeContribution(
             titleSpec = uiState.currentConversationTitle
@@ -246,6 +248,20 @@ fun HomePageContent(
                     key = "settings",
                     title = settingsMenuLabel,
                     onClick = { latestOnOpenSettings() },
+                ),
+                PageChromeMenuItem(
+                    key = "emergency_stop",
+                    title = if (emergencyStopState.active) "恢复 Agent" else "急停 Agent",
+                    onClick = {
+                        if (emergencyStopState.active) {
+                            com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.clear()
+                        } else {
+                            com.niki914.zafiro.chat.agentic.shell.AgentEmergencyStop.activate(
+                                "Stopped by user from Home menu"
+                            )
+                            latestViewModel.sendIntent(HomeChatIntent.StopGenerating)
+                        }
+                    },
                 ),
             ),
         )
@@ -392,6 +408,36 @@ private fun ToolPermissionDialog() {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = "风险等级：${request.riskLevel.name}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (request.riskLevel.name == "HIGH" || request.riskLevel.name == "CRITICAL") {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                request.executionIdentity?.let { identity ->
+                    Text(
+                        text = "权限身份：${identity.uppercase()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                request.reason?.let { reason ->
+                    Text(
+                        text = "原因：$reason",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                request.reversible?.let { reversible ->
+                    Text(
+                        text = if (reversible) "可逆性：可逆" else "可逆性：不可逆",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (reversible) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
