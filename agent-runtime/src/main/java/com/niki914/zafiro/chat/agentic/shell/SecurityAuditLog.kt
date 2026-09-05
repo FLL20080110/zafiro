@@ -11,6 +11,8 @@ enum class SecurityAuditEventType {
     PRIVILEGED_DENIED,
     EMERGENCY_STOP_ACTIVATED,
     EMERGENCY_STOP_CLEARED,
+    SENSITIVE_CONTEXT_BLOCKED,
+    SENSITIVE_CONTEXT_CLEARED,
 }
 
 data class SecurityAuditEvent(
@@ -26,8 +28,10 @@ data class SecurityAuditEvent(
 
 /**
  * Small process-local security audit stream. It intentionally stores no model
- * secrets or OAuth tokens. A later persistence layer can subscribe to [events]
- * and write selected records to encrypted/local storage.
+ * secrets or OAuth tokens. Sensitive-context events must record only category,
+ * package and policy reason — never field contents, passwords, OTPs or page text.
+ * A later persistence layer can subscribe to [events] and write selected records
+ * to encrypted/local storage.
  */
 object SecurityAuditLog {
     private const val MAX_EVENTS = 200
