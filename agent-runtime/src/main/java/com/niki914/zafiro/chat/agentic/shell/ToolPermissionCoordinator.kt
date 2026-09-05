@@ -9,12 +9,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class ToolPermissionRiskLevel { LOW, MEDIUM, HIGH, CRITICAL }
+
 /** 一次工具执行确认请求（UI 展示字段）。 */
 data class ToolPermissionRequest(
     val id: String,
     val toolName: String,
     val command: String,
     val matchedRuleName: String,
+    val riskLevel: ToolPermissionRiskLevel = ToolPermissionRiskLevel.MEDIUM,
+    val executionIdentity: String? = null,
+    val reason: String? = null,
+    val reversible: Boolean? = null,
 )
 
 /** 确认请求终态：允许 / 用户拒绝 / 无确认渠道（宿主路径）拒绝。 */
