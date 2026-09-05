@@ -1,0 +1,59 @@
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/TerminalBuiltin.kt
+@@ -97,8 +97,55 @@ class TerminalBuiltin(
+     private suspend fun handleCommand(args: TerminalArgs): String {
+         val command = args.requireCommand()
+         val timeoutSec = args.resolveTimeout()
+         val decision = safetyPolicy.evaluate(command, toolName = name)
+         if (!decision.allowed) {
+             return TerminalToolResponse.policyBlocked(decision)
+         }
++
++        if (args.backend == Backend.LOCAL) {
++            val identity = (args.identity ?: DEFAULT_LOCAL_IDENTITY).trim().lowercase()
++            if (identity == "root" || identity == "shizuku") {
++                val ruleName = "Privileged ${identity.uppercase()} execution"
++                when (
++                    com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator.confirm(
++                        com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest(
++                            id = java.util.UUID.randomUUID().toString(),
++                            toolName = name,
++                            command = command,
++                            matchedRuleName = ruleName,
++                            riskLevel = com.niki914.zafiro.chat.agentic.shell.ToolPermissionRiskLevel.HIGH,
++                            executionIdentity = identity,
++                            reason = "The AI requested execution with elevated Android privileges.",
++                            reversible = null,
++                        )
++                    )
++                ) {
++                    com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.ALLOWED -> Unit
++                    com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.DENIED_BY_USER -> {
++                        return TerminalToolResponse.policyBlocked(
++                            com.niki914.zafiro.chat.agentic.shell.ShellCommandPolicyDecision(
++                                allowed = false,
++                                code = "PRIVILEGED_IDENTITY_DENIED",
++                                reason = "The user denied privileged $identity execution.",
++                                matchedRuleName = ruleName,
++                                matchedPattern = identity,
++                            )
++                        )
++                    }
++                    com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse.DENIED_UNAVAILABLE -> {
++                        return TerminalToolResponse.policyBlocked(
++                            com.niki914.zafiro.chat.agentic.shell.ShellCommandPolicyDecision(
++                                allowed = false,
++                                code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
++                                reason = "Privileged $identity execution requires explicit user confirmation, " +
++                                        "but the current session cannot display a confirmation prompt.",
++                                matchedRuleName = ruleName,
++                                matchedPattern = identity,
++                            )
++                        )
++                    }
++                }
++            }
++        }
+ 
+         return when (args.backend) {
