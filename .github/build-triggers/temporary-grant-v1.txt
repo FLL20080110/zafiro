@@ -1,0 +1,1 @@
+Trigger debug APK build for scoped temporary grant UI/backend integration.
