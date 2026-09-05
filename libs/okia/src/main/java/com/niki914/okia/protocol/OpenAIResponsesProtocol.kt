@@ -166,6 +166,7 @@ class OpenAIResponsesProtocol(
             })
             snapshot.systemPrompt?.let { put("instructions", it) }
             put("stream", true)
+            put("store", false)
             put("max_output_tokens", snapshot.maxTokens)
             put("temperature", snapshot.temperature)
             if (snapshot.tools.isNotEmpty()) {
