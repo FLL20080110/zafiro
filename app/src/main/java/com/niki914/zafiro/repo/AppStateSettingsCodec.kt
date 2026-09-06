@@ -27,6 +27,8 @@ internal data class AppStateSettings(
     val llmRetryMaxAttempts: Int = 3,
     /** 隐私模式：禁用云端 LLM、MCP 与记忆写入等外发/持久化能力。 */
     val privacyModeEnabled: Boolean = false,
+    /** 用户标记为敏感应用的包名，逗号分隔；包名语法本身不含逗号。 */
+    val sensitiveAppPackagesCsv: String = "",
 )
 
 internal object AppStateSettingsCodec {
@@ -47,6 +49,7 @@ internal object AppStateSettingsCodec {
             llmIdleTimeoutSeconds = root.long(LLM_IDLE_TIMEOUT_KEY, default = 60L),
             llmRetryMaxAttempts = root.int(LLM_RETRY_ATTEMPTS_KEY, default = 3),
             privacyModeEnabled = root.boolean(PRIVACY_MODE_ENABLED_KEY, default = false),
+            sensitiveAppPackagesCsv = root.string(SENSITIVE_APP_PACKAGES_KEY),
         )
     }
 
@@ -64,6 +67,7 @@ internal object AppStateSettingsCodec {
                 LLM_IDLE_TIMEOUT_KEY to JsonPrimitive(state.llmIdleTimeoutSeconds),
                 LLM_RETRY_ATTEMPTS_KEY to JsonPrimitive(state.llmRetryMaxAttempts),
                 PRIVACY_MODE_ENABLED_KEY to JsonPrimitive(state.privacyModeEnabled),
+                SENSITIVE_APP_PACKAGES_KEY to JsonPrimitive(state.sensitiveAppPackagesCsv),
             )
         ).toString()
     }
@@ -79,4 +83,5 @@ internal object AppStateSettingsCodec {
     private const val LLM_IDLE_TIMEOUT_KEY = "llm_idle_timeout_seconds"
     private const val LLM_RETRY_ATTEMPTS_KEY = "llm_retry_max_attempts"
     private const val PRIVACY_MODE_ENABLED_KEY = "privacy_mode_enabled"
+    private const val SENSITIVE_APP_PACKAGES_KEY = "sensitive_app_packages"
 }
