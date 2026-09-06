@@ -40,6 +40,7 @@ object MessageAssistantCoordinator {
         val message: IncomingChatMessage,
         val text: String,
         val createdAtElapsedMs: Long,
+        val accessibilitySessionId: Long = 0L,
     )
 
     private val mutableLatestSuggestion = MutableStateFlow<Suggestion?>(null)
@@ -75,18 +76,10 @@ object MessageAssistantCoordinator {
         if (result.isSuccess) {
             val usedRemoteInput = pending.message.systemReplyAvailable
             SecurityAuditLog.record(
-                kind = if (usedRemoteInput) {
-                    SecurityAuditKind.MESSAGE_REPLY_SENT
-                } else {
-                    SecurityAuditKind.PERMISSION_ALLOWED
-                },
+                kind = if (usedRemoteInput) SecurityAuditKind.MESSAGE_REPLY_SENT else SecurityAuditKind.PERMISSION_ALLOWED,
                 riskLevel = SecurityRiskLevel.INFO,
                 toolName = "message_assistant",
-                policyCode = if (usedRemoteInput) {
-                    "MESSAGE_MANUAL_REPLY_SENT"
-                } else {
-                    "MESSAGE_SUGGESTION_FILLED"
-                },
+                policyCode = if (usedRemoteInput) "MESSAGE_MANUAL_REPLY_SENT" else "MESSAGE_SUGGESTION_FILLED",
                 reason = if (usedRemoteInput) {
                     "User approved a one-time message assistant system reply."
                 } else {
@@ -112,9 +105,7 @@ object MessageAssistantCoordinator {
 
     private suspend fun fillSuggestion(pending: PendingSuggestion): Result<Unit> {
         val policy = MessageAssistantSettings.snapshot()
-        if (policy.mode == MessageAssistantSettings.Mode.OFF ||
-            pending.message.packageName !in policy.enabledPackages
-        ) {
+        if (policy.mode == MessageAssistantSettings.Mode.OFF || pending.message.packageName !in policy.enabledPackages) {
             return Result.failure(IllegalStateException("Accessibility fill blocked: assistant disabled"))
         }
         if (policy.privacyModeEnabled) {
@@ -124,10 +115,18 @@ object MessageAssistantCoordinator {
             return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive message"))
         }
         val current = ChatAccessibilityFallback.snapshot.value
-        if (current.packageName != pending.message.packageName || !current.readyForManualFallback) {
-            return Result.failure(IllegalStateException("Accessibility fill blocked: chat input unavailable"))
+        if (current.packageName != pending.message.packageName ||
+            !current.readyForManualFallback ||
+            pending.accessibilitySessionId <= 0L ||
+            current.sessionId != pending.accessibilitySessionId
+        ) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: chat session changed or input unavailable"))
         }
-        return if (ChatAccessibilityFallback.fillCurrentInput(pending.message.packageName, pending.text)) {
+        return if (ChatAccessibilityFallback.fillCurrentInput(
+                pending.message.packageName,
+                pending.accessibilitySessionId,
+                pending.text,
+            )) {
             Result.success(Unit)
         } else {
             Result.failure(IllegalStateException("Accessibility fill failed"))
@@ -148,10 +147,7 @@ object MessageAssistantCoordinator {
         }
 
         val generated = runCatching {
-            EphemeralLlmClient.generateText(
-                query = buildQuery(message),
-                systemPrompt = SYSTEM_PROMPT,
-            )
+            EphemeralLlmClient.generateText(query = buildQuery(message), systemPrompt = SYSTEM_PROMPT)
         }.map(::sanitizeGeneratedReply)
             .getOrElse {
                 Logger.w(LOG_TAG, "reply generation failed ${it.message}")
@@ -167,8 +163,7 @@ object MessageAssistantCoordinator {
                 val sendResult = IncomingMessageReplyRegistry.send(message, generated)
                 autoSent = sendResult.isSuccess
                 if (autoSent) {
-                    lastAutoReplyAtByConversation[MessageAssistantSettings.conversationKey(message)] =
-                        System.currentTimeMillis()
+                    lastAutoReplyAtByConversation[MessageAssistantSettings.conversationKey(message)] = System.currentTimeMillis()
                     SecurityAuditLog.record(
                         kind = SecurityAuditKind.MESSAGE_REPLY_SENT,
                         riskLevel = SecurityRiskLevel.INFO,
@@ -201,6 +196,7 @@ object MessageAssistantCoordinator {
                 message = message,
                 text = generated,
                 createdAtElapsedMs = SystemClock.elapsedRealtime(),
+                accessibilitySessionId = if (accessibilityFillAvailable) fallback.sessionId else 0L,
             )
         }
         val suggestion = Suggestion(
@@ -218,10 +214,7 @@ object MessageAssistantCoordinator {
         MessageAssistantSuggestionNotifier.show(context, suggestion)
     }
 
-    private fun recordBlocked(
-        decision: MessageAssistantSettings.Decision,
-        overrideCode: String? = null,
-    ) {
+    private fun recordBlocked(decision: MessageAssistantSettings.Decision, overrideCode: String? = null) {
         val code = overrideCode ?: when (decision) {
             MessageAssistantSettings.Decision.BLOCKED_SENSITIVE -> "MESSAGE_SENSITIVE_BLOCKED"
             MessageAssistantSettings.Decision.BLOCKED_PRIVACY -> "MESSAGE_PRIVACY_BLOCKED"
@@ -231,11 +224,7 @@ object MessageAssistantCoordinator {
         }
         SecurityAuditLog.record(
             kind = SecurityAuditKind.MESSAGE_REPLY_BLOCKED,
-            riskLevel = if (decision == MessageAssistantSettings.Decision.BLOCKED_SENSITIVE) {
-                SecurityRiskLevel.HIGH
-            } else {
-                SecurityRiskLevel.LOW
-            },
+            riskLevel = if (decision == MessageAssistantSettings.Decision.BLOCKED_SENSITIVE) SecurityRiskLevel.HIGH else SecurityRiskLevel.LOW,
             toolName = "message_assistant",
             policyCode = code,
             reason = "Message assistant reply was blocked by local policy.",
@@ -250,9 +239,7 @@ object MessageAssistantCoordinator {
 
     private fun pruneSuggestions() {
         val now = SystemClock.elapsedRealtime()
-        pendingSuggestions.entries.removeIf {
-            now - it.value.createdAtElapsedMs > SUGGESTION_TTL_MS
-        }
+        pendingSuggestions.entries.removeIf { now - it.value.createdAtElapsedMs > SUGGESTION_TTL_MS }
     }
 
     internal fun sanitizeGeneratedReply(value: String): String = value.trim().take(MAX_REPLY_CHARS)
