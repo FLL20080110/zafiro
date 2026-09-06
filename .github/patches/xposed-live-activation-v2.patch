@@ -9,7 +9,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
  import android.os.DeadObjectException
  import android.os.Handler
  import android.os.IBinder
-@@ -27,4 +28,7 @@ class ServiceUnavailableException :
+@@ -27,4 +28,6 @@ class ServiceUnavailableException :
      IllegalStateException("Agent runtime service is not connected")
  
 -class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
@@ -25,7 +25,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
 +    private val xposedActivationToken: IBinder? = xposedHostPackage?.let { Binder() }
 +
      private val mainHandler = Handler(Looper.getMainLooper())
-@@ -285,6 +291,17 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
+@@ -285,6 +291,18 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
              storeService = svc?.getStoreBinder()?.let { IAgentStoreService.Stub.asInterface(it) }
              this@AgentRuntimeClient.binder = binder
  
