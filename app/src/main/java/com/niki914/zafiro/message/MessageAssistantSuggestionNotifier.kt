@@ -14,13 +14,7 @@ import androidx.core.content.ContextCompat
 import com.niki914.logging.Logger
 import com.niki914.zafiro.app.MainActivity
 
-/**
- * User-visible surface for generated chat suggestions.
- *
- * The original incoming message body is intentionally never placed in the notification. Only the
- * generated suggestion and the conversation label are shown. The one-time send action carries only
- * an opaque suggestion id; reply text, sender and source message are never copied into Intent extras.
- */
+/** User-visible surface for generated chat suggestions. */
 object MessageAssistantSuggestionNotifier {
     private const val LOG_TAG = "niki914_nexus_MessageSuggestion"
     private const val CHANNEL_ID = "message_assistant_suggestions"
@@ -58,20 +52,20 @@ object MessageAssistantSuggestionNotifier {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
-        if (suggestion.manualSendAvailable) {
-            val sendIntent = Intent(appContext, MessageSuggestionActionReceiver::class.java)
-                .setAction(MessageSuggestionActionReceiver.ACTION_SEND_SUGGESTION)
+        if (suggestion.manualSendAvailable || suggestion.accessibilityFillAvailable) {
+            val actionIntent = Intent(appContext, MessageSuggestionActionReceiver::class.java)
+                .setAction(MessageSuggestionActionReceiver.ACTION_USE_SUGGESTION)
                 .putExtra(MessageSuggestionActionReceiver.EXTRA_SUGGESTION_ID, suggestion.id)
-            val sendPendingIntent = PendingIntent.getBroadcast(
+            val pendingIntent = PendingIntent.getBroadcast(
                 appContext,
                 suggestion.id.hashCode(),
-                sendIntent,
+                actionIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             builder.addAction(
                 android.R.drawable.ic_menu_send,
-                "发送建议",
-                sendPendingIntent,
+                if (suggestion.manualSendAvailable) "发送建议" else "填入输入框",
+                pendingIntent,
             )
         }
 
