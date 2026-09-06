@@ -2,6 +2,7 @@ package com.niki914.zafiro.mod.feat
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.Notification
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
@@ -17,6 +18,9 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
         super.onServiceConnected()
         AccessibilityController.setService(this)
         SensitivePageGuard.installRootProvider { rootInActiveWindow }
+        SensitivePageGuard.installWindowRootsProvider {
+            windows.mapNotNull { window -> window.root }
+        }
         AccessibilityController.clearPointerOverlay()
         val overlay = PointerOverlay()
         overlay.init(this)
@@ -25,11 +29,30 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val type = event?.eventType ?: return
+
+        if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            val notification = event.parcelableData as? Notification
+            val parts = buildList<CharSequence?> {
+                addAll(event.text)
+                if (notification != null) {
+                    val extras = notification.extras
+                    add(extras.getCharSequence(Notification.EXTRA_TITLE))
+                    add(extras.getCharSequence(Notification.EXTRA_TEXT))
+                    add(extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+                    add(extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+                    extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                        ?.forEach { line -> add(line) }
+                }
+            }
+            SensitivePageGuard.recordNotificationText(parts)
+        }
+
         if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
             || type == AccessibilityEvent.TYPE_VIEW_SCROLLED
             || type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+            || type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
         ) {
             AccessibilityController.recordUiEvent()
         }
