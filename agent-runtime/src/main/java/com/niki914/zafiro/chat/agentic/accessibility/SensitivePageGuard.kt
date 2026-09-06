@@ -1,15 +1,16 @@
 package com.niki914.zafiro.chat.agentic.accessibility
 
 import android.os.Build
+import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 
 /**
  * Local-only sensitive page classifier used to pause AI screen interaction before
- * password, OTP, payment, or user-designated sensitive-app UI can be read or acted on.
+ * password, OTP, payment, notification OTP, overlay-window, or user-designated
+ * sensitive-app UI can be read or acted on.
  *
- * The classifier intentionally keeps no page text and performs no network I/O.
- * A root provider is installed by the host AccessibilityService so every decision
- * is evaluated against the current active window rather than a cached snapshot.
+ * The classifier intentionally keeps no page/notification text and performs no
+ * network I/O. Window roots and notification text are evaluated transiently.
  */
 object SensitivePageGuard {
     enum class Kind {
@@ -28,16 +29,73 @@ object SensitivePageGuard {
     @Volatile
     private var rootProvider: (() -> AccessibilityNodeInfo?)? = null
 
+    @Volatile
+    private var windowRootsProvider: (() -> List<AccessibilityNodeInfo>)? = null
+
+    @Volatile
+    private var transientOtpBlockedUntilElapsedMs: Long = 0L
+
     fun installRootProvider(provider: () -> AccessibilityNodeInfo?) {
         rootProvider = provider
     }
 
-    fun clearRootProvider() {
-        rootProvider = null
+    fun installWindowRootsProvider(provider: () -> List<AccessibilityNodeInfo>) {
+        windowRootsProvider = provider
     }
 
-    /** Evaluate the current foreground accessibility tree without retaining it. */
+    fun clearRootProvider() {
+        rootProvider = null
+        windowRootsProvider = null
+        transientOtpBlockedUntilElapsedMs = 0L
+    }
+
+    /**
+     * Inspect notification text only long enough to classify it. The text and OTP
+     * digits are never retained; only a short-lived local blocked-until timestamp is kept.
+     */
+    fun recordNotificationText(parts: Iterable<CharSequence?>) {
+        val semanticText = parts
+            .asSequence()
+            .mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .joinToString(" ")
+            .lowercase()
+        if (semanticText.isEmpty()) return
+
+        val hasStrongOtpSignal = OTP_KEYWORDS.any { it in semanticText } ||
+            NOTIFICATION_OTP_PHRASES.any { it in semanticText }
+        val hasOtpDigits = OTP_CODE_PATTERN.containsMatchIn(semanticText)
+        val hasAuthContext = NOTIFICATION_AUTH_CONTEXT.any { it in semanticText }
+
+        if (hasStrongOtpSignal || (hasOtpDigits && hasAuthContext)) {
+            transientOtpBlockedUntilElapsedMs =
+                SystemClock.elapsedRealtime() + NOTIFICATION_OTP_BLOCK_MS
+        }
+    }
+
+    /** Evaluate all currently interactive accessibility windows without retaining them. */
     fun evaluateCurrent(): Decision {
+        if (SystemClock.elapsedRealtime() < transientOtpBlockedUntilElapsedMs) {
+            return Decision(
+                blocked = true,
+                kind = Kind.OTP,
+                reasonCode = "OTP_NOTIFICATION_TRANSIENT",
+            )
+        }
+
+        val roots = try {
+            windowRootsProvider?.invoke().orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+
+        if (roots.isNotEmpty()) {
+            for (root in roots.take(MAX_WINDOWS_TO_SCAN)) {
+                val decision = evaluate(root)
+                if (decision.blocked) return decision
+            }
+            return Decision(blocked = false)
+        }
+
         val root = try {
             rootProvider?.invoke()
         } catch (_: Throwable) {
@@ -73,8 +131,6 @@ object SensitivePageGuard {
             val node = stack.removeLast()
             visited += 1
 
-            // Android exposes password semantics directly. This is the strongest,
-            // locale-independent signal and therefore wins immediately.
             if (node.isPassword) {
                 return Decision(
                     blocked = true,
@@ -144,6 +200,37 @@ object SensitivePageGuard {
     }
 
     private const val MAX_NODES_TO_SCAN = 512
+    private const val MAX_WINDOWS_TO_SCAN = 12
+    private const val NOTIFICATION_OTP_BLOCK_MS = 30_000L
+
+    private val OTP_CODE_PATTERN = Regex("(?<!\\d)\\d{4,8}(?!\\d)")
+
+    private val NOTIFICATION_OTP_PHRASES = setOf(
+        "your code",
+        "code is",
+        "login code",
+        "sign-in code",
+        "sign in code",
+        "passcode",
+    )
+
+    private val NOTIFICATION_AUTH_CONTEXT = setOf(
+        "login",
+        "sign-in",
+        "sign in",
+        "verify",
+        "verification",
+        "authenticate",
+        "authentication",
+        "otp",
+        "2fa",
+        "验证码",
+        "验证",
+        "登录",
+        "动态码",
+        "认证码",
+        "校验码",
+    )
 
     private val OTP_KEYWORDS = setOf(
         "one-time password",
