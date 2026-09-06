@@ -67,6 +67,10 @@ object IncomingMessageReplyRegistry {
         }
     }
 
+    fun clear() {
+        entries.clear()
+    }
+
     private fun pruneExpired() {
         val now = SystemClock.elapsedRealtime()
         entries.entries.removeIf { now - it.value.createdAtElapsedMs > HANDLE_TTL_MS }
