@@ -1,6 +1,6 @@
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
-@@ -417,6 +417,13 @@
+@@ -417,5 +417,12 @@
                          color = MaterialTheme.colorScheme.onSurfaceVariant,
                      )
                  }
