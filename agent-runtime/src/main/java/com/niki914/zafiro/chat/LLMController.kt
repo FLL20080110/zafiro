@@ -33,6 +33,9 @@ import com.niki914.zafiro.chat.agentic.ToolManager
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
@@ -341,6 +344,13 @@ object LLMController {
         val sensitivePage = SensitivePageGuard.evaluateCurrent()
         if (sensitivePage.blocked) {
             Logger.w(LOG_TAG, "round blocked by sensitive page kind=${sensitivePage.kind} reason=${sensitivePage.reasonCode}")
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+                riskLevel = SecurityRiskLevel.HIGH,
+                toolName = "llm_turn",
+                policyCode = sensitivePage.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+                reason = "Sensitive context blocked before LLM turn execution.",
+            )
             send(LlmStreamEvent.Error(message = SensitivePageGuard.blockedMessage(sensitivePage), code = null))
             return@channelFlow
         }
