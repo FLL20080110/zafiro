@@ -3,6 +3,7 @@ package com.niki914.zafiro.chat.agentic.buildin.impl
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.NodeAction
 import com.niki914.zafiro.chat.agentic.accessibility.ScreenSnapshot
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
@@ -38,6 +39,8 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
                 "limit (default 10). Returns matched nodes with index and version header.\n\n" +
                 "wait_mode \"stable\" (default) waits for the UI to settle and returns early; " +
                 "\"delay\" waits a fixed wait_ms — use for search/refresh where data arrives asynchronously.\n\n" +
+                "Password, OTP, and payment pages are protected: AI screen reading and interaction pause " +
+                "until the user leaves the sensitive page.\n\n" +
                 "If read returns a root-only or empty tree, the app likely uses non-native UI " +
                 "(Flutter/Unity/WebView) — report this to the user without retrying.\n\n" +
                 "Results use the #!tool-result protocol. Usage rules and failure recovery: see the Phone Use skill."
@@ -45,6 +48,7 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
     override val inputSchemaJson: String? get() = SCREEN_ACCESSIBILITY_SCHEMA
 
     override suspend fun invokeText(request: BuiltinToolRequest): TextToolResult {
+        sensitivePageBlock()?.let { return it }
         AccessibilityController.ensurePointerShown()
 
         val args = parseArguments(request.argumentsJson).getOrElse { error ->
@@ -91,6 +95,7 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
 
             is ScreenOp.Search -> {
                 waitBeforeSearch(args)
+                sensitivePageBlock()?.let { return it }
                 AccessibilityController.searchNodes(op.keywords, op.matchMode, op.limit)
                     .fold(
                         onSuccess = { TextToolResult.success(it) },
@@ -128,16 +133,26 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         waitMode: String,
         waitMs: Long,
     ): TextToolResult {
+        sensitivePageBlock()?.let { return it }
         val actionResult = AccessibilityController.executeNodeAction(token, action, text)
+
+        // An allowed action can navigate into a password / OTP / payment page.
+        // Re-evaluate before any post-action tree is serialized and returned.
+        sensitivePageBlock()?.let { return it }
+
         if (!actionResult.ok) {
             val captureResult = AccessibilityController.captureScreen()
             return assembleActionResult(actionResult, captureResult)
         }
         val capture = if (waitMode == "delay") {
-            AccessibilityController.captureScreenAfterDelay(waitMs)
+            delay(waitMs)
+            sensitivePageBlock()?.let { return it }
+            AccessibilityController.captureScreen()
         } else {
             AccessibilityController.waitForStable(waitMs)
         }
+
+        sensitivePageBlock()?.let { return it }
         return capture.fold(
             onSuccess = { snapshot -> TextToolResult.success(snapshot.yaml) },
             onFailure = { e ->
@@ -156,11 +171,18 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
      * is true. Without an explicit wait request, captures immediately (legacy read behavior).
      */
     private suspend fun captureAfterOptionalWait(args: ScreenOpArgs): Result<ScreenSnapshot> {
+        sensitivePageBlock()?.let { return Result.failure(SensitivePageBlockedException(it.message.orEmpty())) }
         if (!args.hasExplicitWaitMode) return AccessibilityController.captureScreen()
         return if (args.waitMode == "delay") {
-            AccessibilityController.captureScreenAfterDelay(args.waitMs)
+            delay(args.waitMs)
+            sensitivePageBlock()?.let { return Result.failure(SensitivePageBlockedException(it.message.orEmpty())) }
+            AccessibilityController.captureScreen()
         } else {
-            AccessibilityController.waitForStable(args.waitMs)
+            AccessibilityController.waitForStable(args.waitMs).also {
+                sensitivePageBlock()?.let { blocked ->
+                    return Result.failure(SensitivePageBlockedException(blocked.message.orEmpty()))
+                }
+            }
         }
     }
 
@@ -173,6 +195,17 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
             AccessibilityController.waitForStable(args.waitMs)
         }
     }
+
+    private fun sensitivePageBlock(): TextToolResult? {
+        val decision = SensitivePageGuard.evaluateCurrent()
+        if (!decision.blocked) return null
+        return TextToolResult.failure(
+            code = "SENSITIVE_PAGE_BLOCKED",
+            message = SensitivePageGuard.blockedMessage(decision),
+        )
+    }
+
+    private class SensitivePageBlockedException(message: String) : RuntimeException(message)
 
     private companion object {
         private val SCREEN_ACCESSIBILITY_SCHEMA = """
