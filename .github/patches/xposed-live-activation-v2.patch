@@ -9,7 +9,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
  import android.os.DeadObjectException
  import android.os.Handler
  import android.os.IBinder
-@@ -27,5 +28,8 @@ class ServiceUnavailableException :
+@@ -27,4 +28,7 @@ class ServiceUnavailableException :
      IllegalStateException("Agent runtime service is not connected")
  
 -class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
@@ -67,7 +67,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/service/AgentRuntimeSe
  import kotlinx.coroutines.CancellationException
  import kotlinx.coroutines.CoroutineScope
  import kotlinx.coroutines.Dispatchers
-@@ -41,5 +42,6 @@ import kotlinx.coroutines.cancelAndJoin
+@@ -41,4 +42,5 @@ import kotlinx.coroutines.cancelAndJoin
  import kotlinx.coroutines.launch
  import kotlinx.coroutines.runBlocking
 +import java.util.concurrent.ConcurrentHashMap
@@ -169,7 +169,7 @@ diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/PromptC
 diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
 --- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
 +++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
-@@ -38,6 +38,7 @@ import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
+@@ -38,4 +38,5 @@ import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
  import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
  import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
 +import com.niki914.zafiro.settings.RuntimeCapabilityRegistry
