@@ -29,6 +29,12 @@ internal data class AppStateSettings(
     val privacyModeEnabled: Boolean = false,
     /** 用户标记为敏感应用的包名，逗号分隔；包名语法本身不含逗号。 */
     val sensitiveAppPackagesCsv: String = "",
+    /** 消息助手模式：off / suggest / auto_reply。 */
+    val messageAssistantMode: String = "off",
+    /** 允许消息助手处理的应用包名，逗号分隔。 */
+    val messageAssistantPackagesCsv: String = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim",
+    /** 允许自动回复的可信会话键，换行分隔；建议回复模式不要求白名单。 */
+    val messageAssistantTrustedConversations: String = "",
 )
 
 internal object AppStateSettingsCodec {
@@ -50,6 +56,10 @@ internal object AppStateSettingsCodec {
             llmRetryMaxAttempts = root.int(LLM_RETRY_ATTEMPTS_KEY, default = 3),
             privacyModeEnabled = root.boolean(PRIVACY_MODE_ENABLED_KEY, default = false),
             sensitiveAppPackagesCsv = root.string(SENSITIVE_APP_PACKAGES_KEY),
+            messageAssistantMode = root.string(MESSAGE_ASSISTANT_MODE_KEY).ifBlank { "off" },
+            messageAssistantPackagesCsv = root.string(MESSAGE_ASSISTANT_PACKAGES_KEY)
+                .ifBlank { DEFAULT_MESSAGE_ASSISTANT_PACKAGES },
+            messageAssistantTrustedConversations = root.string(MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY),
         )
     }
 
@@ -68,6 +78,9 @@ internal object AppStateSettingsCodec {
                 LLM_RETRY_ATTEMPTS_KEY to JsonPrimitive(state.llmRetryMaxAttempts),
                 PRIVACY_MODE_ENABLED_KEY to JsonPrimitive(state.privacyModeEnabled),
                 SENSITIVE_APP_PACKAGES_KEY to JsonPrimitive(state.sensitiveAppPackagesCsv),
+                MESSAGE_ASSISTANT_MODE_KEY to JsonPrimitive(state.messageAssistantMode),
+                MESSAGE_ASSISTANT_PACKAGES_KEY to JsonPrimitive(state.messageAssistantPackagesCsv),
+                MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY to JsonPrimitive(state.messageAssistantTrustedConversations),
             )
         ).toString()
     }
@@ -84,4 +97,8 @@ internal object AppStateSettingsCodec {
     private const val LLM_RETRY_ATTEMPTS_KEY = "llm_retry_max_attempts"
     private const val PRIVACY_MODE_ENABLED_KEY = "privacy_mode_enabled"
     private const val SENSITIVE_APP_PACKAGES_KEY = "sensitive_app_packages"
+    private const val MESSAGE_ASSISTANT_MODE_KEY = "message_assistant_mode"
+    private const val MESSAGE_ASSISTANT_PACKAGES_KEY = "message_assistant_packages"
+    private const val MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY = "message_assistant_trusted_conversations"
+    private const val DEFAULT_MESSAGE_ASSISTANT_PACKAGES = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim"
 }
