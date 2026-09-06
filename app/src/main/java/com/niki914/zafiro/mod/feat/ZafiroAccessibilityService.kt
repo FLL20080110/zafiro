@@ -11,6 +11,7 @@ import com.niki914.zafiro.app.overlay.PointerOverlay
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.IAccessibility
 import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
+import com.niki914.zafiro.message.ChatAccessibilityFallback
 
 class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
@@ -56,6 +57,17 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
         ) {
             AccessibilityController.recordUiEvent()
         }
+
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            || type == AccessibilityEvent.TYPE_VIEW_SCROLLED
+        ) {
+            ChatAccessibilityFallback.update(
+                packageName = event.packageName?.toString(),
+                root = rootInActiveWindow,
+            )
+        }
     }
 
     override fun onInterrupt() {
@@ -63,6 +75,7 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
     }
 
     override fun onDestroy() {
+        ChatAccessibilityFallback.clear()
         SensitivePageGuard.clearRootProvider()
         AccessibilityController.clearPointerOverlay()
         AccessibilityController.clearService()
