@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_mode_title">隐私模式</string>
+    <string name="privacy_mode_summary">关闭云模型、MCP、网络/代码工具和记忆写入；开启时清除临时授权</string>
+</resources>
