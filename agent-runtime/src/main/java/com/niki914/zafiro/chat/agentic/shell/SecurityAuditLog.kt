@@ -21,6 +21,8 @@ enum class SecurityAuditKind {
     TEMPORARY_GRANTS_CLEARED,
     SENSITIVE_APP_POLICY_ENABLED,
     SENSITIVE_APP_POLICY_DISABLED,
+    MESSAGE_REPLY_SENT,
+    MESSAGE_REPLY_BLOCKED,
 }
 
 data class SecurityAuditEvent(
