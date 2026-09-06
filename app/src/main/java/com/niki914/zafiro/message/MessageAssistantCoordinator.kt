@@ -37,6 +37,7 @@ object MessageAssistantCoordinator {
         val text: String,
         val generatedAtMs: Long,
         val autoSent: Boolean,
+        val manualSendAvailable: Boolean,
     )
 
     private data class PendingSuggestion(
@@ -159,7 +160,8 @@ object MessageAssistantCoordinator {
 
         pruneSuggestions()
         val suggestionId = UUID.randomUUID().toString()
-        if (!autoSent && message.systemReplyAvailable) {
+        val manualSendAvailable = !autoSent && message.systemReplyAvailable
+        if (manualSendAvailable) {
             pendingSuggestions[suggestionId] = PendingSuggestion(
                 message = message,
                 text = generated,
@@ -174,6 +176,7 @@ object MessageAssistantCoordinator {
             text = generated,
             generatedAtMs = System.currentTimeMillis(),
             autoSent = autoSent,
+            manualSendAvailable = manualSendAvailable,
         )
         mutableLatestSuggestion.value = suggestion
         MessageAssistantSuggestionNotifier.show(context, suggestion)
