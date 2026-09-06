@@ -11,6 +11,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SecurityAuditLogTest {
@@ -40,6 +41,31 @@ class SecurityAuditLogTest {
         assertFalse(serializedEvent.contains("abc123"))
         assertFalse(serializedEvent.contains("123456"))
         assertFalse(serializedEvent.contains("secret-value"))
+    }
+
+    @Test
+    fun sensitiveAppPolicyAudit_doesNotRetainAppIdentity() {
+        val secretPackage = "com.example.privatebank.otp123456"
+
+        SecurityAuditLog.recordSensitiveAppPolicyChange(paused = true)
+        SecurityAuditLog.recordSensitiveAppPolicyChange(paused = false)
+
+        val enabled = SecurityAuditLog.events.value[0]
+        assertEquals(SecurityAuditKind.SENSITIVE_APP_POLICY_ENABLED, enabled.kind)
+        assertEquals("SENSITIVE_APP_PAUSE_ENABLED", enabled.policyCode)
+        assertEquals(SecurityRiskLevel.INFO, enabled.riskLevel)
+        assertNull(enabled.toolName)
+        assertNull(enabled.ruleName)
+        assertNull(enabled.commandHashSha256)
+        assertFalse(enabled.toString().contains(secretPackage))
+
+        val disabled = SecurityAuditLog.events.value[1]
+        assertEquals(SecurityAuditKind.SENSITIVE_APP_POLICY_DISABLED, disabled.kind)
+        assertEquals("SENSITIVE_APP_PAUSE_DISABLED", disabled.policyCode)
+        assertNull(disabled.toolName)
+        assertNull(disabled.ruleName)
+        assertNull(disabled.commandHashSha256)
+        assertFalse(disabled.toString().contains(secretPackage))
     }
 
     @Test
