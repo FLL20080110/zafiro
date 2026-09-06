@@ -2,6 +2,8 @@ package com.niki914.zafiro.repo
 
 import com.niki914.zafiro.message.IncomingChatMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageAssistantSettingsTest {
@@ -21,12 +23,20 @@ class MessageAssistantSettingsTest {
         enabledPackages: Set<String> = setOf("com.tencent.mm"),
         trustedConversations: Set<String> = setOf("com.tencent.mm|Alice"),
         privacyModeEnabled: Boolean = false,
+        accessibilityFallbackEnabled: Boolean = false,
     ) = MessageAssistantSettings.Snapshot(
         mode = mode,
         enabledPackages = enabledPackages,
         trustedConversations = trustedConversations,
         privacyModeEnabled = privacyModeEnabled,
+        accessibilityFallbackEnabled = accessibilityFallbackEnabled,
     )
+
+    @Test
+    fun accessibilityFallbackIsOptInByDefault() {
+        assertFalse(policy().accessibilityFallbackEnabled)
+        assertTrue(policy(accessibilityFallbackEnabled = true).accessibilityFallbackEnabled)
+    }
 
     @Test
     fun autoReplyRequiresAllLocalAuthorizationGates() {
