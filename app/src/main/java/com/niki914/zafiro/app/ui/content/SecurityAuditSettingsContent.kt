@@ -125,6 +125,7 @@ private fun eventDetails(event: SecurityAuditEvent): String {
         event.ruleName?.let { add(stringResource(R.string.security_audit_event_rule, it)) }
         event.policyCode?.let { add(stringResource(R.string.security_audit_event_policy, it)) }
         event.reason?.let { add(stringResource(R.string.security_audit_event_reason, it)) }
+        event.commandHashSha256?.let { add(stringResource(R.string.security_audit_event_command, it)) }
         add(stringResource(R.string.security_audit_risk, riskLabel(event.riskLevel)))
     }
     return details.joinToString(separator = "\n")
