@@ -17,7 +17,7 @@ data class ToolPermissionRequest(
     val toolName: String,
     val command: String,
     val matchedRuleName: String,
-    /** 风险详情供确认 UI 与本地审计使用；默认按高风险处理。 */
+    /** 风险详情供确认 UI 使用；持久审计仅记录稳定策略代码与固定原因。 */
     val riskLevel: SecurityRiskLevel = SecurityRiskLevel.HIGH,
     val riskReason: String? = null,
     /**
@@ -92,7 +92,7 @@ object ToolPermissionCoordinator {
             request = request,
             kind = SecurityAuditKind.PERMISSION_REQUESTED,
             policyCode = "CONFIRM_REQUESTED",
-            reason = request.riskReason ?: "Explicit user confirmation required.",
+            reason = "Explicit user confirmation required.",
         )
         pendingFlow.value = request
         val waiter = CompletableDeferred<ToolPermissionResponse>()
