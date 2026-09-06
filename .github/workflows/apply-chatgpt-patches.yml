@@ -33,7 +33,7 @@ jobs:
           changed=0
           for patch in .github/patches/*.patch; do
             echo "Checking $patch"
-            if git apply --check "$patch" 2>/dev/null; then
+            if git apply --check --verbose "$patch"; then
               git apply "$patch"
               changed=1
               echo "Applied $patch"
