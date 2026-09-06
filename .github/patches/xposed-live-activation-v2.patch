@@ -9,23 +9,21 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
  import android.os.DeadObjectException
  import android.os.Handler
  import android.os.IBinder
-@@ -27,4 +28,6 @@ class ServiceUnavailableException :
-     IllegalStateException("Agent runtime service is not connected")
- 
--class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
--    XIpcBridge.StoreClient {
-+class AgentRuntimeClient(
-+    private val context: Context,
-+    private val xposedHostPackage: String? = null,
-+) : AssistantTextSource, XIpcBridge.StoreClient {
-@@ -46,4 +50,6 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
+@@ -46,4 +47,13 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
      private var deathRecipient: IBinder.DeathRecipient? = null
      private var retryCount = 0
  
-+    private val xposedActivationToken: IBinder? = xposedHostPackage?.let { Binder() }
++    private var xposedHostPackage: String? = null
++    private var xposedActivationToken: IBinder? = null
++
++    fun enableXposedActivationReport(hostPackage: String): AgentRuntimeClient {
++        xposedHostPackage = hostPackage
++        xposedActivationToken = Binder()
++        return this
++    }
 +
      private val mainHandler = Handler(Looper.getMainLooper())
-@@ -285,6 +291,18 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
+@@ -285,6 +295,18 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
              storeService = svc?.getStoreBinder()?.let { IAgentStoreService.Stub.asInterface(it) }
              this@AgentRuntimeClient.binder = binder
  
@@ -52,7 +50,7 @@ diff --git a/app/src/main/java/a0/a0/a0/a0/a0/a0/Entrance.kt b/app/src/main/java
          scope.launch(Dispatchers.IO) {
              val ctx = ContextProvider.await()
 -            val client = AgentRuntimeClient(ctx)
-+            val client = AgentRuntimeClient(ctx, xposedHostPackage = params.packageName)
++            val client = AgentRuntimeClient(ctx).enableXposedActivationReport(params.packageName)
              client.connectAndAwait()
              XRepo.init(ctx, XIpcDomainSettingsStore(client))
  
