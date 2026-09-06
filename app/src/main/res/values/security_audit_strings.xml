@@ -2,7 +2,7 @@
 <resources>
     <string name="security_audit_title">安全审计</string>
     <string name="security_audit_summary">查看本地安全决策与阻断记录</string>
-    <string name="security_audit_description">安全事件仅保存在本机当前进程中，不会上传。命令只保留脱敏摘要和 SHA-256 摘要。</string>
+    <string name="security_audit_description">安全事件仅保存在本机应用私有目录，不会上传或进入系统云备份；最多保留 200 条。命令只保留脱敏摘要和 SHA-256 摘要。</string>
     <string name="security_audit_empty">暂无安全审计记录。</string>
     <string name="security_audit_clear">清空记录</string>
     <string name="security_audit_event_tool">工具：%1$s</string>
