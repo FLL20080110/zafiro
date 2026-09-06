@@ -9,6 +9,7 @@ import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 
@@ -34,24 +35,11 @@ class SecurityAuditLogTest {
         val event = SecurityAuditLog.events.value.single()
         assertNotNull(event.commandHashSha256)
         assertEquals(64, event.commandHashSha256?.length)
-        assertEquals(
-            setOf(
-                event.id.toString(),
-                event.timestampMs.toString(),
-                event.kind.name,
-                event.riskLevel.name,
-                event.toolName,
-                event.commandHashSha256,
-            ).filterNotNull().toSet(),
-            setOf(
-                event.id.toString(),
-                event.timestampMs.toString(),
-                event.kind.name,
-                event.riskLevel.name,
-                event.toolName,
-                event.commandHashSha256,
-            ).filterNotNull().toSet(),
-        )
+        val serializedEvent = event.toString()
+        assertFalse(serializedEvent.contains(command))
+        assertFalse(serializedEvent.contains("abc123"))
+        assertFalse(serializedEvent.contains("123456"))
+        assertFalse(serializedEvent.contains("secret-value"))
     }
 
     @Test
