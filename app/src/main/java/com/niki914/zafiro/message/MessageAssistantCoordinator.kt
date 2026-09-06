@@ -1,5 +1,6 @@
 package com.niki914.zafiro.message
 
+import android.content.Context
 import com.niki914.logging.Logger
 import com.niki914.zafiro.chat.EphemeralLlmClient
 import com.niki914.zafiro.repo.MessageAssistantSettings
@@ -35,15 +36,16 @@ object MessageAssistantCoordinator {
 
     private val lastAutoReplyAtByConversation = ConcurrentHashMap<String, Long>()
 
-    fun start(scope: CoroutineScope) {
+    fun start(scope: CoroutineScope, context: Context) {
+        val appContext = context.applicationContext
         scope.launch {
             IncomingMessageBus.events.collectLatest { message ->
-                handle(message)
+                handle(appContext, message)
             }
         }
     }
 
-    private suspend fun handle(message: IncomingChatMessage) {
+    private suspend fun handle(context: Context, message: IncomingChatMessage) {
         val initialDecision = runCatching { MessageAssistantSettings.evaluate(message) }
             .getOrElse {
                 Logger.w(LOG_TAG, "policy evaluation failed ${it.message}")
@@ -76,7 +78,7 @@ object MessageAssistantCoordinator {
             }
         }
 
-        mutableLatestSuggestion.value = Suggestion(
+        val suggestion = Suggestion(
             packageName = message.packageName,
             conversation = message.conversation,
             sourcePostedAtMs = message.postedAtMs,
@@ -84,6 +86,8 @@ object MessageAssistantCoordinator {
             generatedAtMs = System.currentTimeMillis(),
             autoSent = autoSent,
         )
+        mutableLatestSuggestion.value = suggestion
+        MessageAssistantSuggestionNotifier.show(context, suggestion)
     }
 
     private fun allowAutoReplyNow(message: IncomingChatMessage): Boolean {
