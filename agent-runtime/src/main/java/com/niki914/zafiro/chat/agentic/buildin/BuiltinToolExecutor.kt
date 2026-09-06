@@ -1,5 +1,8 @@
 package com.niki914.zafiro.chat.agentic.buildin
 
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.settings.RuntimeEnvironment
 import com.niki914.zafiro.settings.model.RuntimePrivacyPolicy
 import kotlinx.coroutines.CancellationException
@@ -30,6 +33,13 @@ class BuiltinToolExecutor(
         argumentsJson: String,
     ): String {
         privacyBlockReason(tool.name)?.let { reason ->
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.PRIVACY_BLOCKED,
+                riskLevel = SecurityRiskLevel.HIGH,
+                toolName = tool.name,
+                policyCode = "PRIVACY_MODE_BLOCKED",
+                reason = reason,
+            )
             return BuiltinToolResult.failure(
                 code = "PRIVACY_MODE_BLOCKED",
                 message = reason,
