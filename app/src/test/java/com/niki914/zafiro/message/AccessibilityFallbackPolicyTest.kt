@@ -70,4 +70,64 @@ class AccessibilityFallbackPolicyTest {
             )
         )
     }
+
+    @Test
+    fun acceptsVisibleEnabledEditableNode() {
+        assertTrue(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = true,
+                supportsSetText = false,
+            )
+        )
+    }
+
+    @Test
+    fun acceptsVisibleEnabledSetTextNodeForCustomChatViews() {
+        assertTrue(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = false,
+                supportsSetText = true,
+            )
+        )
+    }
+
+    @Test
+    fun rejectsHiddenEditableNode() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = false,
+                isEnabled = true,
+                isEditable = true,
+                supportsSetText = true,
+            )
+        )
+    }
+
+    @Test
+    fun rejectsDisabledEditableNode() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = false,
+                isEditable = true,
+                supportsSetText = true,
+            )
+        )
+    }
+
+    @Test
+    fun rejectsVisibleEnabledNonEditableNode() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = false,
+                supportsSetText = false,
+            )
+        )
+    }
 }
