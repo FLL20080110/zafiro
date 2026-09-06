@@ -22,6 +22,8 @@ data class IncomingChatMessage(
     val systemReplyAvailable: Boolean = false,
     /** Local-only classification. Sensitive content must never enter an automatic reply path. */
     val sensitive: Boolean = false,
+    /** Opaque, short-lived in-memory handle; never persist or expose outside this process. */
+    val replyHandleId: String? = null,
 )
 
 object IncomingMessageBus {
