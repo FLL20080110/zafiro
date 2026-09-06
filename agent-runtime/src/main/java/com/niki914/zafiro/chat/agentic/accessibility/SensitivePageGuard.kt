@@ -5,7 +5,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 /**
  * Local-only sensitive page classifier used to pause AI screen interaction before
- * password, OTP, or payment UI can be read or acted on.
+ * password, OTP, payment, or user-designated sensitive-app UI can be read or acted on.
  *
  * The classifier intentionally keeps no page text and performs no network I/O.
  * A root provider is installed by the host AccessibilityService so every decision
@@ -16,6 +16,7 @@ object SensitivePageGuard {
         PASSWORD,
         OTP,
         PAYMENT,
+        SENSITIVE_APP,
     }
 
     data class Decision(
@@ -47,6 +48,18 @@ object SensitivePageGuard {
     }
 
     internal fun evaluate(root: AccessibilityNodeInfo): Decision {
+        val foregroundPackage = root.packageName?.toString()
+        if (
+            SensitiveAppPolicyRegistry.policyFor(foregroundPackage) ==
+            SensitiveAppPolicyRegistry.Policy.PAUSE_AI
+        ) {
+            return Decision(
+                blocked = true,
+                kind = Kind.SENSITIVE_APP,
+                reasonCode = "SENSITIVE_APP_POLICY",
+            )
+        }
+
         var hasEditableField = false
         var hasOtpSignal = false
         var hasStrongPaymentSignal = false
@@ -123,6 +136,7 @@ object SensitivePageGuard {
             Kind.PASSWORD -> "password"
             Kind.OTP -> "one-time-code"
             Kind.PAYMENT -> "payment"
+            Kind.SENSITIVE_APP -> "user-protected app"
             null -> "sensitive"
         }
         return "AI screen interaction is paused because the current page appears to be a $category page. " +
