@@ -43,6 +43,11 @@ enum class ZafiroSettingsGroup(
         summaryRes = R.string.ui_settings_execution_rules_summary,
         routeSuffix = "execution-rules",
     ),
+    SensitiveApps(
+        titleRes = R.string.sensitive_apps_title,
+        summaryRes = R.string.sensitive_apps_summary,
+        routeSuffix = "sensitive-apps",
+    ),
     SecurityAudit(
         titleRes = R.string.security_audit_title,
         summaryRes = R.string.security_audit_summary,
