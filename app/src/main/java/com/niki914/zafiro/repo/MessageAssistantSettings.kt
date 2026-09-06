@@ -3,13 +3,7 @@ package com.niki914.zafiro.repo
 import com.niki914.store.StoreDescriptorRegistry
 import com.niki914.zafiro.message.IncomingChatMessage
 
-/**
- * Durable, local-only policy for inbound chat handling.
- *
- * The model may propose reply text, but it never decides whether sending is authorized.
- * Sending permission is derived exclusively from these persisted local settings plus the
- * message's local sensitivity/reply-capability facts.
- */
+/** Durable, local-only policy for inbound chat handling. */
 object MessageAssistantSettings {
     enum class Mode(val wireValue: String) {
         OFF("off"),
@@ -26,6 +20,7 @@ object MessageAssistantSettings {
         val enabledPackages: Set<String>,
         val trustedConversations: Set<String>,
         val privacyModeEnabled: Boolean,
+        val accessibilityFallbackEnabled: Boolean,
     )
 
     enum class Decision {
@@ -44,11 +39,9 @@ object MessageAssistantSettings {
             mode = Mode.fromWire(state.messageAssistantMode),
             enabledPackages = splitCsv(state.messageAssistantPackagesCsv),
             trustedConversations = state.messageAssistantTrustedConversations
-                .lineSequence()
-                .map(String::trim)
-                .filter(String::isNotEmpty)
-                .toSet(),
+                .lineSequence().map(String::trim).filter(String::isNotEmpty).toSet(),
             privacyModeEnabled = state.privacyModeEnabled,
+            accessibilityFallbackEnabled = state.messageAssistantAccessibilityFallbackEnabled,
         )
     }
 
@@ -67,9 +60,7 @@ object MessageAssistantSettings {
             val current = AppStateSettingsCodec.parse(json)
             val packages = splitCsv(current.messageAssistantPackagesCsv).toMutableSet()
             if (enabled) packages += normalized else packages -= normalized
-            AppStateSettingsCodec.encode(
-                current.copy(messageAssistantPackagesCsv = packages.sorted().joinToString(","))
-            )
+            AppStateSettingsCodec.encode(current.copy(messageAssistantPackagesCsv = packages.sorted().joinToString(",")))
         }
         return snapshot()
     }
@@ -80,10 +71,7 @@ object MessageAssistantSettings {
         XRepo.updateJson(StoreDescriptorRegistry.APP_STATE_ID) { json ->
             val current = AppStateSettingsCodec.parse(json)
             val trustedSet = current.messageAssistantTrustedConversations
-                .lineSequence()
-                .map(String::trim)
-                .filter(String::isNotEmpty)
-                .toMutableSet()
+                .lineSequence().map(String::trim).filter(String::isNotEmpty).toMutableSet()
             if (trusted) trustedSet += normalized else trustedSet -= normalized
             AppStateSettingsCodec.encode(
                 current.copy(messageAssistantTrustedConversations = trustedSet.sorted().joinToString("\n"))
@@ -92,24 +80,25 @@ object MessageAssistantSettings {
         return snapshot()
     }
 
+    suspend fun setAccessibilityFallbackEnabled(enabled: Boolean): Snapshot {
+        XRepo.updateJson(StoreDescriptorRegistry.APP_STATE_ID) { json ->
+            val current = AppStateSettingsCodec.parse(json)
+            AppStateSettingsCodec.encode(
+                current.copy(messageAssistantAccessibilityFallbackEnabled = enabled)
+            )
+        }
+        return snapshot()
+    }
+
     suspend fun evaluate(message: IncomingChatMessage): Decision = decide(snapshot(), message)
 
-    /**
-     * Pure deterministic policy decision. Keep all send authorization gates here so UI/model code
-     * cannot bypass privacy mode, sensitive-content blocking, per-app enablement, trusted-chat
-     * allowlisting, or the requirement for a real system RemoteInput reply capability.
-     */
     fun decide(policy: Snapshot, message: IncomingChatMessage): Decision {
-        if (policy.mode == Mode.OFF || message.packageName !in policy.enabledPackages) {
-            return Decision.IGNORE
-        }
+        if (policy.mode == Mode.OFF || message.packageName !in policy.enabledPackages) return Decision.IGNORE
         if (message.sensitive) return Decision.BLOCKED_SENSITIVE
         if (policy.privacyModeEnabled) return Decision.BLOCKED_PRIVACY
         if (policy.mode == Mode.SUGGEST) return Decision.SUGGEST_ONLY
         if (!message.systemReplyAvailable) return Decision.BLOCKED_NO_SYSTEM_REPLY
-        if (conversationKey(message) !in policy.trustedConversations) {
-            return Decision.BLOCKED_UNTRUSTED
-        }
+        if (conversationKey(message) !in policy.trustedConversations) return Decision.BLOCKED_UNTRUSTED
         return Decision.AUTO_REPLY_ALLOWED
     }
 
@@ -117,9 +106,5 @@ object MessageAssistantSettings {
         "${message.packageName}|${message.conversation.trim()}"
 
     private fun splitCsv(value: String): Set<String> = value
-        .split(',')
-        .asSequence()
-        .map(String::trim)
-        .filter(String::isNotEmpty)
-        .toSet()
+        .split(',').asSequence().map(String::trim).filter(String::isNotEmpty).toSet()
 }
