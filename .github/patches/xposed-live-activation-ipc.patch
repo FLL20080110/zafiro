@@ -9,8 +9,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
  import android.os.DeadObjectException
  import android.os.Handler
  import android.os.IBinder
-@@ -27,8 +28,12 @@ class ServiceUnavailableException :
- class ServiceUnavailableException :
+@@ -27,5 +28,8 @@ class ServiceUnavailableException :
      IllegalStateException("Agent runtime service is not connected")
  
 -class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
@@ -19,14 +18,14 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/client/AgentRuntimeCli
 +    private val context: Context,
 +    private val xposedHostPackage: String? = null,
 +) : AssistantTextSource, XIpcBridge.StoreClient {
-@@ -46,6 +51,8 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
+@@ -46,4 +50,6 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
      private var deathRecipient: IBinder.DeathRecipient? = null
      private var retryCount = 0
  
 +    private val xposedActivationToken: IBinder? = xposedHostPackage?.let { Binder() }
 +
      private val mainHandler = Handler(Looper.getMainLooper())
-@@ -285,6 +292,17 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
+@@ -285,6 +291,17 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
              storeService = svc?.getStoreBinder()?.let { IAgentStoreService.Stub.asInterface(it) }
              this@AgentRuntimeClient.binder = binder
  
@@ -68,13 +67,13 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/service/AgentRuntimeSe
  import kotlinx.coroutines.CancellationException
  import kotlinx.coroutines.CoroutineScope
  import kotlinx.coroutines.Dispatchers
-@@ -41,6 +42,7 @@ import kotlinx.coroutines.cancelAndJoin
+@@ -41,5 +42,6 @@ import kotlinx.coroutines.cancelAndJoin
  import kotlinx.coroutines.launch
  import kotlinx.coroutines.runBlocking
 +import java.util.concurrent.ConcurrentHashMap
  import java.util.concurrent.atomic.AtomicReference
  import com.niki914.zafiro.app.R as AppR
-@@ -57,6 +59,13 @@ class AgentRuntimeService : Service() {
+@@ -57,6 +59,14 @@ class AgentRuntimeService : Service() {
  
      override fun onDestroy() {
          activeTurn.getAndSet(null)?.job?.cancel()
@@ -89,7 +88,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/service/AgentRuntimeSe
          scope.cancel()
          stopForeground(STOP_FOREGROUND_REMOVE)
          super.onDestroy()
-@@ -64,6 +73,8 @@ class AgentRuntimeService : Service() {
+@@ -64,5 +74,7 @@ class AgentRuntimeService : Service() {
  
      private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
      private val activeTurn = AtomicReference<ActiveTurn?>(null)
@@ -97,7 +96,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/runtime/service/AgentRuntimeSe
 +        ConcurrentHashMap<IBinder, IBinder.DeathRecipient>()
  
      private data class ActiveTurn(
-@@ -123,6 +134,37 @@ class AgentRuntimeService : Service() {
+@@ -123,6 +135,36 @@ class AgentRuntimeService : Service() {
              return storeStub
          }
  
