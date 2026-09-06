@@ -20,8 +20,9 @@ import java.io.File
  * App-private durable storage for the minimized security audit snapshot.
  *
  * The file lives under noBackupFilesDir, is atomically replaced, is capped to the same
- * 200 events as the in-memory log, and stores only the already-minimized audit fields.
- * Raw passwords, OTPs, page text, screenshots, tokens and command output are never added here.
+ * 200 events as the in-memory log, and stores only minimized audit metadata plus an optional
+ * command fingerprint. Raw commands, passwords, OTPs, page text, screenshots, tokens and
+ * command output are never persisted here.
  */
 object SecurityAuditPersistence {
     private const val LOG_TAG = "niki914_nexus_AuditPersistence"
@@ -89,7 +90,6 @@ object SecurityAuditPersistence {
         putNullable("policy", event.policyCode)
         putNullable("reason", event.reason)
         putNullable("command_hash_sha256", event.commandHashSha256)
-        putNullable("command_preview", event.commandPreview)
     }
 
     private fun decodeEvent(value: JSONObject?): SecurityAuditEvent? {
@@ -110,7 +110,6 @@ object SecurityAuditPersistence {
             policyCode = value.safeText("policy"),
             reason = value.safeText("reason"),
             commandHashSha256 = value.safeHash(),
-            commandPreview = value.safeText("command_preview"),
         )
     }
 
