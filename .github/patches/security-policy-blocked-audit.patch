@@ -1,0 +1,19 @@
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/shell/ShellCommandSafetyPolicy.kt
+@@ -36,6 +36,15 @@
+         // Hard safety floor: these checks cannot be disabled by deleting all
+         // user-defined execution rules.
+         when (val builtIn = candidates.evaluateBuiltInProtection()) {
+             is BuiltInProtection.Deny -> {
++                SecurityAuditLog.record(
++                    kind = SecurityAuditKind.POLICY_BLOCKED,
++                    riskLevel = SecurityRiskLevel.CRITICAL,
++                    toolName = toolName,
++                    ruleName = builtIn.name,
++                    policyCode = "BUILTIN_CRITICAL_BLOCKED",
++                    reason = builtIn.reason,
++                    command = command,
++                )
+                 return ShellCommandPolicyDecision(
+                     allowed = false,
