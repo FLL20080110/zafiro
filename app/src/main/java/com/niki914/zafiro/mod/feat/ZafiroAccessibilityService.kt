@@ -73,6 +73,8 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
             ChatAccessibilityFallback.update(
                 packageName = event.packageName?.toString(),
                 root = rootInActiveWindow,
+                conversationBoundary = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                    type == AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             )
         }
     }
