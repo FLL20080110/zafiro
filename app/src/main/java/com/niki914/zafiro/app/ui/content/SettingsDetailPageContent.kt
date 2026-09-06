@@ -109,6 +109,11 @@ fun SettingsDetailPageContent(
         return
     }
 
+    if (group == ZafiroSettingsGroup.MessageAssistant) {
+        MessageAssistantSettingsContent()
+        return
+    }
+
     if (group == ZafiroSettingsGroup.SensitiveApps) {
         SensitiveAppsSettingsContent()
         return
