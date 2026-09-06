@@ -1,0 +1,80 @@
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt
+index 9caeba5..0000000 100644
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationAccessibilityBuiltin.kt
+@@ -7,6 +7,9 @@ import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
+ import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
+ import com.niki914.zafiro.chat.agentic.buildin.TextToolResult
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
++import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+ import kotlinx.coroutines.delay
+ 
+ /**
+@@ -186,6 +189,14 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
+     private fun sensitivePageBlock(): TextToolResult? {
+         val decision = SensitivePageGuard.evaluateCurrent()
+         if (!decision.blocked) return null
++        SecurityAuditLog.record(
++            kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
++            riskLevel = SecurityRiskLevel.HIGH,
++            toolName = name,
++            policyCode = decision.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
++            reason = "Sensitive context blocked before accessibility screen access.",
++        )
+         return TextToolResult.failure(
+             code = "SENSITIVE_PAGE_BLOCKED",
+             message = SensitivePageGuard.blockedMessage(decision),
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt
+index 676bb9d..0000000 100644
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/buildin/impl/ScreenOperationShellBuiltin.kt
+@@ -8,6 +8,9 @@ import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
+ import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
+ import com.niki914.zafiro.chat.agentic.buildin.TextToolResult
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
++import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+ import kotlinx.coroutines.delay
+ 
+ /**
+@@ -125,6 +128,14 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
+     private fun sensitivePageBlock(): TextToolResult? {
+         val decision = SensitivePageGuard.evaluateCurrent()
+         if (!decision.blocked) return null
++        SecurityAuditLog.record(
++            kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
++            riskLevel = SecurityRiskLevel.HIGH,
++            toolName = name,
++            policyCode = decision.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
++            reason = "Sensitive context blocked before shell screen access.",
++        )
+         return TextToolResult.failure(
+             code = "SENSITIVE_PAGE_BLOCKED",
+             message = SensitivePageGuard.blockedMessage(decision),
+diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
+index 0000000..0000000 100644
+--- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
++++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/LLMController.kt
+@@ -40,6 +40,9 @@ import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
+ import com.niki914.zafiro.chat.agentic.python.PyRuntime
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
++import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
++import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+ import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
+ import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
+ import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
+@@ -604,6 +607,13 @@ object LLMController {
+         val sensitivePage = SensitivePageGuard.evaluateCurrent()
+         if (sensitivePage.blocked) {
+             Logger.w(LOG_TAG, "round blocked by sensitive page kind=${sensitivePage.kind} reason=${sensitivePage.reasonCode}")
++            SecurityAuditLog.record(
++                kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
++                riskLevel = SecurityRiskLevel.HIGH,
++                toolName = "llm_turn",
++                policyCode = sensitivePage.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
++                reason = "Sensitive context blocked before LLM turn execution.",
++            )
+             send(LlmStreamEvent.Error(message = SensitivePageGuard.blockedMessage(sensitivePage), code = null))
+             return@channelFlow
+         }
