@@ -12,18 +12,28 @@ import kotlinx.coroutines.flow.asStateFlow
  * Visible chat text is never retained. The fill handler is installed only while Zafiro's
  * AccessibilityService is alive and re-reads the current foreground root at invocation time.
  * This fallback can fill an editable box after explicit user action, but never clicks Send.
+ *
+ * Fail-closed rule: Accessibility fallback is considered writable only when exactly one editable
+ * target exists in the current supported chat window. Multiple editable targets are treated as
+ * ambiguous so Zafiro cannot accidentally write into search, notes, rename, or auxiliary fields.
  */
 object ChatAccessibilityFallback {
     private const val MAX_VISITED_NODES = 400
 
     data class Snapshot(
         val packageName: String = "",
-        val editableInputAvailable: Boolean = false,
+        val editableInputCount: Int = 0,
         val sendButtonAvailable: Boolean = false,
         val updatedAtElapsedMs: Long = 0L,
     ) {
+        val editableInputAvailable: Boolean
+            get() = editableInputCount == 1
+
+        val ambiguousEditableInputs: Boolean
+            get() = editableInputCount > 1
+
         val readyForManualFallback: Boolean
-            get() = packageName in SUPPORTED_PACKAGES && editableInputAvailable
+            get() = packageName in SUPPORTED_PACKAGES && editableInputCount == 1
     }
 
     private val mutableSnapshot = MutableStateFlow(Snapshot())
@@ -43,6 +53,8 @@ object ChatAccessibilityFallback {
     fun fillCurrentInput(expectedPackage: String, text: String): Boolean {
         val normalizedText = text.trim()
         if (expectedPackage !in SUPPORTED_PACKAGES || normalizedText.isEmpty()) return false
+        val current = mutableSnapshot.value
+        if (current.packageName != expectedPackage || !current.readyForManualFallback) return false
         return fillHandler?.invoke(expectedPackage, normalizedText) == true
     }
 
@@ -53,18 +65,22 @@ object ChatAccessibilityFallback {
             return
         }
 
-        var editable = false
+        var editableCount = 0
         var sendButton = false
         var visited = 0
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
 
-        while (queue.isNotEmpty() && visited < MAX_VISITED_NODES && !(editable && sendButton)) {
+        while (queue.isNotEmpty() && visited < MAX_VISITED_NODES) {
             val node = queue.removeFirst()
             visited += 1
 
-            if (isEditableInput(node)) editable = true
-            if (isSendControl(node)) sendButton = true
+            if (isEditableInput(node)) editableCount += 1
+            if (!sendButton && isSendControl(node)) sendButton = true
+
+            // We only need to distinguish none / exactly one / ambiguous.
+            // Keep the count bounded at two to avoid unnecessary work/state detail.
+            if (editableCount > 2) editableCount = 2
 
             for (index in 0 until node.childCount) {
                 node.getChild(index)?.let(queue::addLast)
@@ -73,7 +89,7 @@ object ChatAccessibilityFallback {
 
         mutableSnapshot.value = Snapshot(
             packageName = normalizedPackage,
-            editableInputAvailable = editable,
+            editableInputCount = editableCount,
             sendButtonAvailable = sendButton,
             updatedAtElapsedMs = SystemClock.elapsedRealtime(),
         )
@@ -84,25 +100,30 @@ object ChatAccessibilityFallback {
         if (root == null || normalizedText.isEmpty()) return false
 
         var visited = 0
+        val candidates = ArrayList<AccessibilityNodeInfo>(2)
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
+
         while (queue.isNotEmpty() && visited < MAX_VISITED_NODES) {
             val node = queue.removeFirst()
             visited += 1
             if (isEditableInput(node)) {
-                val args = android.os.Bundle().apply {
-                    putCharSequence(
-                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                        normalizedText,
-                    )
-                }
-                if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
+                candidates += node
+                if (candidates.size > 1) return false
             }
             for (index in 0 until node.childCount) {
                 node.getChild(index)?.let(queue::addLast)
             }
         }
-        return false
+
+        val target = candidates.singleOrNull() ?: return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(
+                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                normalizedText,
+            )
+        }
+        return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     fun clear() {
