@@ -134,7 +134,7 @@ object ShellCommandExplainer {
         fragments.any { fragment -> contains(fragment) }
 
     private fun String.containsAnyCommand(vararg commands: String): Boolean =
-        commands.any(::containsCommand)
+        commands.any { command -> containsCommand(command) }
 
     private fun String.containsCommand(command: String): Boolean {
         return Regex("(?:^|[\\s;&|()])${Regex.escape(command)}(?:$|[\\s;&|()])")
