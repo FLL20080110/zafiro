@@ -422,6 +422,13 @@ private fun ToolPermissionDialog() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                request.worstCaseImpact.takeIf { it.isNotBlank() }?.let { impact ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_worst_case_impact, impact),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
