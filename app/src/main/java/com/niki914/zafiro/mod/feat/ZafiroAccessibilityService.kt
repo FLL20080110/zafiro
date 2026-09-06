@@ -22,6 +22,13 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
         SensitivePageGuard.installWindowRootsProvider {
             windows.mapNotNull { window -> window.root }
         }
+        ChatAccessibilityFallback.installFillHandler { expectedPackage, text ->
+            val root = rootInActiveWindow ?: return@installFillHandler false
+            if (root.packageName?.toString() != expectedPackage) {
+                return@installFillHandler false
+            }
+            ChatAccessibilityFallback.fillEditableInput(root, text)
+        }
         AccessibilityController.clearPointerOverlay()
         val overlay = PointerOverlay()
         overlay.init(this)
@@ -75,6 +82,7 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
     }
 
     override fun onDestroy() {
+        ChatAccessibilityFallback.clearFillHandler()
         ChatAccessibilityFallback.clear()
         SensitivePageGuard.clearRootProvider()
         AccessibilityController.clearPointerOverlay()
