@@ -1,6 +1,7 @@
 package com.niki914.zafiro.message
 
 import android.content.Context
+import android.os.SystemClock
 import com.niki914.logging.Logger
 import com.niki914.zafiro.chat.EphemeralLlmClient
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,9 +26,11 @@ import java.util.concurrent.ConcurrentHashMap
 object MessageAssistantCoordinator {
     private const val LOG_TAG = "niki914_nexus_MessageAssistantCoordinator"
     private const val AUTO_REPLY_COOLDOWN_MS = 30_000L
+    private const val SUGGESTION_TTL_MS = 5 * 60 * 1000L
     private const val MAX_REPLY_CHARS = 500
 
     data class Suggestion(
+        val id: String,
         val packageName: String,
         val conversation: String,
         val sourcePostedAtMs: Long,
@@ -35,10 +39,17 @@ object MessageAssistantCoordinator {
         val autoSent: Boolean,
     )
 
+    private data class PendingSuggestion(
+        val message: IncomingChatMessage,
+        val text: String,
+        val createdAtElapsedMs: Long,
+    )
+
     private val mutableLatestSuggestion = MutableStateFlow<Suggestion?>(null)
     val latestSuggestion: StateFlow<Suggestion?> = mutableLatestSuggestion.asStateFlow()
 
     private val lastAutoReplyAtByConversation = ConcurrentHashMap<String, Long>()
+    private val pendingSuggestions = ConcurrentHashMap<String, PendingSuggestion>()
 
     fun start(scope: CoroutineScope, context: Context) {
         val appContext = context.applicationContext
@@ -52,6 +63,38 @@ object MessageAssistantCoordinator {
     fun clearTransientState() {
         mutableLatestSuggestion.value = null
         lastAutoReplyAtByConversation.clear()
+        pendingSuggestions.clear()
+    }
+
+    suspend fun sendSuggestion(context: Context, suggestionId: String): Result<Unit> {
+        pruneSuggestions()
+        val pending = pendingSuggestions.remove(suggestionId)
+            ?: return Result.failure(IllegalStateException("Suggestion unavailable or expired"))
+
+        val result = IncomingMessageReplyRegistry.sendApproved(pending.message, pending.text)
+        if (result.isSuccess) {
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.MESSAGE_REPLY_SENT,
+                riskLevel = SecurityRiskLevel.INFO,
+                toolName = "message_assistant",
+                policyCode = "MESSAGE_MANUAL_REPLY_SENT",
+                reason = "User approved a one-time message assistant system reply.",
+            )
+            MessageAssistantSuggestionNotifier.dismiss(
+                context.applicationContext,
+                pending.message.packageName,
+                pending.message.conversation,
+            )
+        } else {
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.MESSAGE_REPLY_BLOCKED,
+                riskLevel = SecurityRiskLevel.LOW,
+                toolName = "message_assistant",
+                policyCode = "MESSAGE_MANUAL_REPLY_BLOCKED",
+                reason = "User-approved message reply was rejected by current local policy or system reply state.",
+            )
+        }
+        return result
     }
 
     private suspend fun handle(context: Context, message: IncomingChatMessage) {
@@ -114,7 +157,17 @@ object MessageAssistantCoordinator {
             }
         }
 
+        pruneSuggestions()
+        val suggestionId = UUID.randomUUID().toString()
+        if (!autoSent && message.systemReplyAvailable) {
+            pendingSuggestions[suggestionId] = PendingSuggestion(
+                message = message,
+                text = generated,
+                createdAtElapsedMs = SystemClock.elapsedRealtime(),
+            )
+        }
         val suggestion = Suggestion(
+            id = suggestionId,
             packageName = message.packageName,
             conversation = message.conversation,
             sourcePostedAtMs = message.postedAtMs,
@@ -154,6 +207,13 @@ object MessageAssistantCoordinator {
         val key = MessageAssistantSettings.conversationKey(message)
         val last = lastAutoReplyAtByConversation[key] ?: return true
         return System.currentTimeMillis() - last >= AUTO_REPLY_COOLDOWN_MS
+    }
+
+    private fun pruneSuggestions() {
+        val now = SystemClock.elapsedRealtime()
+        pendingSuggestions.entries.removeIf {
+            now - it.value.createdAtElapsedMs > SUGGESTION_TTL_MS
+        }
     }
 
     internal fun sanitizeGeneratedReply(value: String): String =
