@@ -40,6 +40,9 @@ fun SensitiveAppsSettingsContent() {
     var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
     var pausedPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loaded by remember { mutableStateOf(false) }
+    // Only the newest optimistic mutation may update visible state when its async save finishes.
+    // Durable/runtime policy mutations are separately serialized by SensitiveAppSettings.
+    var policyMutationVersion by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) {
         val loadedPackages = runCatching { SensitiveAppSettings.packages() }
@@ -143,15 +146,22 @@ fun SensitiveAppsSettingsContent() {
                         } else {
                             before - packageName
                         }
+                        policyMutationVersion += 1L
+                        val mutationVersion = policyMutationVersion
                         scope.launch {
                             runCatching {
                                 SensitiveAppSettings.setPaused(packageName, action.checked)
                             }.onSuccess { saved ->
-                                pausedPackages = saved
+                                if (mutationVersion == policyMutationVersion) {
+                                    pausedPackages = saved
+                                }
                             }.onFailure {
                                 Logger.w(LOG_TAG, "save policy failed ${it.message}")
-                                pausedPackages = runCatching { SensitiveAppSettings.packages() }
+                                val restored = runCatching { SensitiveAppSettings.packages() }
                                     .getOrDefault(before)
+                                if (mutationVersion == policyMutationVersion) {
+                                    pausedPackages = restored
+                                }
                             }
                         }
                     }
