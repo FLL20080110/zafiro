@@ -5,6 +5,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * In-memory capability detector and explicit text-fill bridge for chat-app Accessibility fallback.
@@ -13,9 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * AccessibilityService is alive and re-reads the current foreground root at invocation time.
  * This fallback can fill an editable box after explicit user action, but never clicks Send.
  *
- * Fail-closed rule: Accessibility fallback is considered writable only when exactly one editable
- * target exists in the current supported chat window. Multiple editable targets are treated as
- * ambiguous so Zafiro cannot accidentally write into search, notes, rename, or auxiliary fields.
+ * Fail-closed rules:
+ * - exactly one editable target must exist;
+ * - the supported foreground package must still match; and
+ * - the accessibility session id captured when the suggestion was created must still match.
+ *
+ * Window-state/window-set changes advance the session id. This invalidates suggestions after a
+ * conversation/window switch without retaining chat titles or visible message text.
  */
 object ChatAccessibilityFallback {
     private const val MAX_VISITED_NODES = 400
@@ -24,6 +29,7 @@ object ChatAccessibilityFallback {
         val packageName: String = "",
         val editableInputCount: Int = 0,
         val sendButtonAvailable: Boolean = false,
+        val sessionId: Long = 0L,
         val updatedAtElapsedMs: Long = 0L,
     ) {
         val editableInputAvailable: Boolean
@@ -33,9 +39,10 @@ object ChatAccessibilityFallback {
             get() = editableInputCount > 1
 
         val readyForManualFallback: Boolean
-            get() = packageName in SUPPORTED_PACKAGES && editableInputCount == 1
+            get() = packageName in SUPPORTED_PACKAGES && editableInputCount == 1 && sessionId > 0L
     }
 
+    private val sessionCounter = AtomicLong(0L)
     private val mutableSnapshot = MutableStateFlow(Snapshot())
     val snapshot: StateFlow<Snapshot> = mutableSnapshot.asStateFlow()
 
@@ -50,19 +57,38 @@ object ChatAccessibilityFallback {
         fillHandler = null
     }
 
-    fun fillCurrentInput(expectedPackage: String, text: String): Boolean {
+    fun fillCurrentInput(expectedPackage: String, expectedSessionId: Long, text: String): Boolean {
         val normalizedText = text.trim()
-        if (expectedPackage !in SUPPORTED_PACKAGES || normalizedText.isEmpty()) return false
+        if (expectedPackage !in SUPPORTED_PACKAGES || expectedSessionId <= 0L || normalizedText.isEmpty()) {
+            return false
+        }
         val current = mutableSnapshot.value
-        if (current.packageName != expectedPackage || !current.readyForManualFallback) return false
+        if (current.packageName != expectedPackage ||
+            current.sessionId != expectedSessionId ||
+            !current.readyForManualFallback
+        ) {
+            return false
+        }
         return fillHandler?.invoke(expectedPackage, normalizedText) == true
     }
 
-    fun update(packageName: String?, root: AccessibilityNodeInfo?) {
+    fun update(
+        packageName: String?,
+        root: AccessibilityNodeInfo?,
+        conversationBoundary: Boolean = false,
+    ) {
         val normalizedPackage = packageName.orEmpty()
         if (normalizedPackage !in SUPPORTED_PACKAGES || root == null) {
             clear()
             return
+        }
+
+        val previous = mutableSnapshot.value
+        val packageChanged = previous.packageName.isNotEmpty() && previous.packageName != normalizedPackage
+        val sessionId = when {
+            previous.sessionId <= 0L -> sessionCounter.incrementAndGet()
+            conversationBoundary || packageChanged -> sessionCounter.incrementAndGet()
+            else -> previous.sessionId
         }
 
         var editableCount = 0
@@ -77,9 +103,6 @@ object ChatAccessibilityFallback {
 
             if (isEditableInput(node)) editableCount += 1
             if (!sendButton && isSendControl(node)) sendButton = true
-
-            // We only need to distinguish none / exactly one / ambiguous.
-            // Keep the count bounded at two to avoid unnecessary work/state detail.
             if (editableCount > 2) editableCount = 2
 
             for (index in 0 until node.childCount) {
@@ -91,6 +114,7 @@ object ChatAccessibilityFallback {
             packageName = normalizedPackage,
             editableInputCount = editableCount,
             sendButtonAvailable = sendButton,
+            sessionId = sessionId,
             updatedAtElapsedMs = SystemClock.elapsedRealtime(),
         )
     }
