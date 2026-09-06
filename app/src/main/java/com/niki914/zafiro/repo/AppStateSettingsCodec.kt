@@ -35,6 +35,8 @@ internal data class AppStateSettings(
     val messageAssistantPackagesCsv: String = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim",
     /** 允许自动回复的可信会话键，换行分隔；建议回复模式不要求白名单。 */
     val messageAssistantTrustedConversations: String = "",
+    /** 无 RemoteInput 时是否允许用户显式触发 Accessibility 填入；默认关闭。 */
+    val messageAssistantAccessibilityFallbackEnabled: Boolean = false,
 )
 
 internal object AppStateSettingsCodec {
@@ -46,10 +48,7 @@ internal object AppStateSettingsCodec {
             lastOpenedAgentId = root.string(LAST_OPENED_AGENT_ID_KEY).ifBlank { "main" },
             lastOpenedConversationId = root.string(LAST_OPENED_CONVERSATION_ID_KEY),
             languageTag = root.string(LANGUAGE_TAG_KEY),
-            loadLastConversationOnStartup = root.boolean(
-                LOAD_LAST_CONVERSATION_KEY,
-                default = true
-            ),
+            loadLastConversationOnStartup = root.boolean(LOAD_LAST_CONVERSATION_KEY, default = true),
             themeMode = root.string(THEME_MODE_KEY).ifBlank { "dark" },
             themeSeedColor = root.string(THEME_SEED_COLOR_KEY).ifBlank { "FF52DBC9" },
             llmIdleTimeoutSeconds = root.long(LLM_IDLE_TIMEOUT_KEY, default = 60L),
@@ -60,6 +59,10 @@ internal object AppStateSettingsCodec {
             messageAssistantPackagesCsv = root.string(MESSAGE_ASSISTANT_PACKAGES_KEY)
                 .ifBlank { DEFAULT_MESSAGE_ASSISTANT_PACKAGES },
             messageAssistantTrustedConversations = root.string(MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY),
+            messageAssistantAccessibilityFallbackEnabled = root.boolean(
+                MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY,
+                default = false,
+            ),
         )
     }
 
@@ -81,6 +84,7 @@ internal object AppStateSettingsCodec {
                 MESSAGE_ASSISTANT_MODE_KEY to JsonPrimitive(state.messageAssistantMode),
                 MESSAGE_ASSISTANT_PACKAGES_KEY to JsonPrimitive(state.messageAssistantPackagesCsv),
                 MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY to JsonPrimitive(state.messageAssistantTrustedConversations),
+                MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY to JsonPrimitive(state.messageAssistantAccessibilityFallbackEnabled),
             )
         ).toString()
     }
@@ -100,5 +104,7 @@ internal object AppStateSettingsCodec {
     private const val MESSAGE_ASSISTANT_MODE_KEY = "message_assistant_mode"
     private const val MESSAGE_ASSISTANT_PACKAGES_KEY = "message_assistant_packages"
     private const val MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY = "message_assistant_trusted_conversations"
+    private const val MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY =
+        "message_assistant_accessibility_fallback_enabled"
     private const val DEFAULT_MESSAGE_ASSISTANT_PACKAGES = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim"
 }
