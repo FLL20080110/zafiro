@@ -51,7 +51,7 @@ fun SensitiveAppsSettingsContent() {
             runCatching {
                 val pm = context.packageManager
                 val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-                pm.queryIntentActivities(intent, PackageManager.MATCH_DISABLED_COMPONENTS)
+                val visibleApps = pm.queryIntentActivities(intent, PackageManager.MATCH_DISABLED_COMPONENTS)
                     .asSequence()
                     .mapNotNull { info ->
                         val packageName = info.activityInfo?.packageName.orEmpty()
@@ -65,8 +65,31 @@ fun SensitiveAppsSettingsContent() {
                         }
                     }
                     .distinctBy(LaunchableApp::packageName)
-                    .sortedBy { it.label.lowercase() }
                     .toList()
+
+                // Keep persisted policies manageable even when a protected package is
+                // no longer launchable, temporarily disabled, or no longer visible to
+                // PackageManager. Showing the saved package name lets the user remove
+                // stale protection without requesting QUERY_ALL_PACKAGES.
+                val visiblePackages = visibleApps.asSequence()
+                    .map(LaunchableApp::packageName)
+                    .toSet()
+                val savedOnlyApps = loadedPackages
+                    .asSequence()
+                    .filter { it.isNotBlank() && it != context.packageName && it !in visiblePackages }
+                    .map { packageName ->
+                        LaunchableApp(
+                            packageName = packageName,
+                            label = packageName,
+                        )
+                    }
+                    .toList()
+
+                (visibleApps + savedOnlyApps)
+                    .sortedWith(
+                        compareBy<LaunchableApp> { it.label.lowercase() }
+                            .thenBy(LaunchableApp::packageName)
+                    )
             }.getOrElse {
                 Logger.w(LOG_TAG, "load apps failed ${it.message}")
                 emptyList()
