@@ -74,6 +74,10 @@
             </intent-filter>
         </activity-alias>
 
+        <receiver
+            android:name="com.niki914.zafiro.message.MessageSuggestionActionReceiver"
+            android:exported="false" />
+
         <service
             android:name="com.niki914.zafiro.mod.feat.ZafiroAccessibilityService"
             android:exported="true"
