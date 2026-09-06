@@ -21,6 +21,11 @@ data class ToolPermissionRequest(
     val riskLevel: SecurityRiskLevel = SecurityRiskLevel.HIGH,
     val riskReason: String? = null,
     /**
+     * 本地确定性生成的命令作用说明。仅描述命令类别与影响，不复制路径、包名、
+     * URL、token、密码等参数，也不会调用模型或网络服务。
+     */
+    val commandExplanation: String = ShellCommandExplainer.explain(command),
+    /**
      * 大于 0 时 UI 可以提供“临时允许”。授权范围严格绑定当前
      * toolName + matchedRuleName + command，且只保存在当前进程内存中。
      */
