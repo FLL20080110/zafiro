@@ -39,7 +39,13 @@ object ChatAccessibilityFallback {
             get() = editableInputCount > 1
 
         val readyForManualFallback: Boolean
-            get() = packageName in SUPPORTED_PACKAGES && editableInputCount == 1 && sessionId > 0L
+            get() = AccessibilityFallbackPolicy.canFill(
+                expectedPackage = packageName,
+                expectedSessionId = sessionId,
+                currentPackage = packageName,
+                currentSessionId = sessionId,
+                editableInputCount = editableInputCount,
+            )
     }
 
     private val sessionCounter = AtomicLong(0L)
@@ -59,13 +65,16 @@ object ChatAccessibilityFallback {
 
     fun fillCurrentInput(expectedPackage: String, expectedSessionId: Long, text: String): Boolean {
         val normalizedText = text.trim()
-        if (expectedPackage !in SUPPORTED_PACKAGES || expectedSessionId <= 0L || normalizedText.isEmpty()) {
-            return false
-        }
+        if (normalizedText.isEmpty()) return false
+
         val current = mutableSnapshot.value
-        if (current.packageName != expectedPackage ||
-            current.sessionId != expectedSessionId ||
-            !current.readyForManualFallback
+        if (!AccessibilityFallbackPolicy.canFill(
+                expectedPackage = expectedPackage,
+                expectedSessionId = expectedSessionId,
+                currentPackage = current.packageName,
+                currentSessionId = current.sessionId,
+                editableInputCount = current.editableInputCount,
+            )
         ) {
             return false
         }
