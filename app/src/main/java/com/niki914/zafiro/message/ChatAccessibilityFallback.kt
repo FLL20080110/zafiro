@@ -163,11 +163,13 @@ object ChatAccessibilityFallback {
         mutableSnapshot.value = Snapshot()
     }
 
-    private fun isEditableInput(node: AccessibilityNodeInfo): Boolean {
-        if (!node.isVisibleToUser || !node.isEnabled) return false
-        return node.isEditable ||
-            node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
-    }
+    private fun isEditableInput(node: AccessibilityNodeInfo): Boolean =
+        AccessibilityFallbackPolicy.isEditableCandidate(
+            isVisibleToUser = node.isVisibleToUser,
+            isEnabled = node.isEnabled,
+            isEditable = node.isEditable,
+            supportsSetText = node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT },
+        )
 
     private fun isSendControl(node: AccessibilityNodeInfo): Boolean {
         if (!node.isVisibleToUser || !node.isEnabled || !node.isClickable) return false
@@ -179,9 +181,6 @@ object ChatAccessibilityFallback {
         }
     }
 
-    val SUPPORTED_PACKAGES = setOf(
-        "com.tencent.mm",
-        "com.tencent.mobileqq",
-        "com.tencent.tim",
-    )
+    val SUPPORTED_PACKAGES: Set<String>
+        get() = AccessibilityFallbackPolicy.supportedPackages
 }
