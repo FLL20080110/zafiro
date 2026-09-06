@@ -54,6 +54,9 @@ class IncomingMessageNotificationService : NotificationListenerService() {
             .ifBlank { title }
             .ifBlank { sender }
 
+        val replyAction = notification.actions.orEmpty().firstOrNull(::hasFreeFormReply)
+        val replyHandleId = replyAction?.let(IncomingMessageReplyRegistry::register)
+
         IncomingMessageBus.publish(
             IncomingChatMessage(
                 packageName = packageName,
@@ -61,8 +64,9 @@ class IncomingMessageNotificationService : NotificationListenerService() {
                 conversation = conversation,
                 text = text,
                 postedAtMs = sbn.postTime,
-                systemReplyAvailable = notification.actions.orEmpty().any(::hasFreeFormReply),
+                systemReplyAvailable = replyHandleId != null,
                 sensitive = isSensitiveMessage(text),
+                replyHandleId = replyHandleId,
             )
         )
     }
