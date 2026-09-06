@@ -28,4 +28,6 @@
     <string name="security_audit_kind_temporary_grants_cleared">已清除临时授权</string>
     <string name="security_audit_kind_sensitive_app_policy_enabled">已开启敏感应用保护</string>
     <string name="security_audit_kind_sensitive_app_policy_disabled">已关闭敏感应用保护</string>
+    <string name="security_audit_kind_message_reply_sent">消息助手已回复</string>
+    <string name="security_audit_kind_message_reply_blocked">消息助手已阻断</string>
 </resources>
