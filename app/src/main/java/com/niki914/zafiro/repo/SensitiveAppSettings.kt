@@ -22,6 +22,9 @@ import kotlinx.coroutines.sync.withLock
  * UI await, but cannot cancel a policy write that the user already requested.
  */
 object SensitiveAppSettings {
+    private const val MAX_PACKAGE_NAME_LENGTH = 255
+    private const val MAX_SENSITIVE_PACKAGES = 512
+
     private val policyMutex = Mutex()
     private val policyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -30,8 +33,7 @@ object SensitiveAppSettings {
     }
 
     suspend fun setPaused(packageName: String, paused: Boolean): Set<String> {
-        val normalized = packageName.trim()
-        if (normalized.isEmpty()) return packages()
+        val normalized = normalizePackageName(packageName) ?: return packages()
 
         // This Deferred is owned by policyScope rather than the calling UI scope. Cancellation of
         // a Composable/page after the toggle therefore stops only its await, not the durable write.
@@ -43,8 +45,12 @@ object SensitiveAppSettings {
                     val current = AppStateSettingsCodec.parse(json)
                     val values = decode(current.sensitiveAppPackagesCsv).toMutableSet()
                     val wasPaused = normalized in values
-                    if (paused) values += normalized else values -= normalized
-                    changed = wasPaused != paused
+                    if (paused) {
+                        if (wasPaused || values.size < MAX_SENSITIVE_PACKAGES) values += normalized
+                    } else {
+                        values -= normalized
+                    }
+                    changed = wasPaused != (normalized in values)
                     updated = values.toSortedSet()
                     AppStateSettingsCodec.encode(
                         current.copy(sensitiveAppPackagesCsv = encode(updated))
@@ -79,20 +85,36 @@ object SensitiveAppSettings {
         )
     }
 
-    private fun decode(csv: String): Set<String> {
+    internal fun decode(csv: String): Set<String> {
         return csv.split(',')
             .asSequence()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
+            .mapNotNull(::normalizePackageName)
+            .distinct()
+            .take(MAX_SENSITIVE_PACKAGES)
             .toSortedSet()
     }
 
-    private fun encode(values: Set<String>): String {
+    internal fun encode(values: Set<String>): String {
         return values.asSequence()
-            .map(String::trim)
-            .filter(String::isNotEmpty)
+            .mapNotNull(::normalizePackageName)
             .distinct()
             .sorted()
+            .take(MAX_SENSITIVE_PACKAGES)
             .joinToString(",")
+    }
+
+    internal fun normalizePackageName(value: String): String? {
+        val packageName = value.trim()
+        if (packageName.isEmpty() || packageName.length > MAX_PACKAGE_NAME_LENGTH) return null
+        val segments = packageName.split('.')
+        if (segments.any { segment ->
+                segment.isEmpty() ||
+                    !(segment.first().isLetter() || segment.first() == '_') ||
+                    segment.any { char -> !(char.isLetterOrDigit() || char == '_') }
+            }
+        ) {
+            return null
+        }
+        return packageName
     }
 }
