@@ -9,6 +9,7 @@ interface IAgentRuntimeService : IInterface {
     fun submit(query: String?, callback: IRenderFrameCallback?)
     fun cancel()
     fun resetConversation()
+    fun reportXposedActivation(hostPackage: String?, token: IBinder?)
     fun getStoreBinder(): IBinder?
 
     abstract class Stub : Binder(), IAgentRuntimeService {
@@ -43,6 +44,13 @@ interface IAgentRuntimeService : IInterface {
                     return true
                 }
 
+                TRANSACTION_reportXposedActivation -> {
+                    data.enforceInterface(DESCRIPTOR)
+                    reportXposedActivation(data.readString(), data.readStrongBinder())
+                    reply?.writeNoException()
+                    return true
+                }
+
                 TRANSACTION_getStoreBinder -> {
                     data.enforceInterface(DESCRIPTOR)
                     val binder = getStoreBinder()
@@ -61,6 +69,7 @@ interface IAgentRuntimeService : IInterface {
             private const val TRANSACTION_submit = 1
             private const val TRANSACTION_cancel = 2
             private const val TRANSACTION_resetConversation = 3
+            private const val TRANSACTION_reportXposedActivation = 4
             private const val TRANSACTION_getStoreBinder = 100
 
             fun asInterface(obj: IBinder?): IAgentRuntimeService? {
@@ -108,6 +117,21 @@ interface IAgentRuntimeService : IInterface {
                 try {
                     data.writeInterfaceToken(DESCRIPTOR)
                     remote.transact(TRANSACTION_resetConversation, data, reply, 0)
+                    reply.readException()
+                } finally {
+                    reply.recycle()
+                    data.recycle()
+                }
+            }
+
+            override fun reportXposedActivation(hostPackage: String?, token: IBinder?) {
+                val data = Parcel.obtain()
+                val reply = Parcel.obtain()
+                try {
+                    data.writeInterfaceToken(DESCRIPTOR)
+                    data.writeString(hostPackage)
+                    data.writeStrongBinder(token)
+                    remote.transact(TRANSACTION_reportXposedActivation, data, reply, 0)
                     reply.readException()
                 } finally {
                     reply.recycle()
