@@ -8,6 +8,9 @@ import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
 import com.niki914.zafiro.chat.agentic.buildin.TextToolResult
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import kotlinx.coroutines.delay
 
 /**
@@ -66,7 +69,6 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
                     onFailure = { e ->
                         TextToolResult.failure(
                             ScreenOperationError.SERVICE_UNAVAILABLE.code,
-                            // 给 LLM 的工具错误 fallback（模型消费的英文契约文本），非 UI 本地化文案，保持英文
                             e.message ?: "Service unavailable",
                         )
                     },
@@ -117,15 +119,6 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         }
     }
 
-    /**
-     * Executes a node action, then captures the updated screen according to [waitMode].
-     *
-     * When the action itself fails, the screen is captured to provide a fresh tree
-     * for the LLM to retry with, instead of returning a bare error.
-     *
-     * Returns a [TextToolResult] — success with the YAML tree, or failure with
-     * an optional payload.
-     */
     private suspend fun executeNodeActionAndCapture(
         token: String,
         action: NodeAction,
@@ -135,9 +128,6 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
     ): TextToolResult {
         sensitivePageBlock()?.let { return it }
         val actionResult = AccessibilityController.executeNodeAction(token, action, text)
-
-        // An allowed action can navigate into a password / OTP / payment page.
-        // Re-evaluate before any post-action tree is serialized and returned.
         sensitivePageBlock()?.let { return it }
 
         if (!actionResult.ok) {
@@ -155,7 +145,7 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         sensitivePageBlock()?.let { return it }
         return capture.fold(
             onSuccess = { snapshot -> TextToolResult.success(snapshot.yaml) },
-            onFailure = { e ->
+            onFailure = {
                 TextToolResult.failure(
                     code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,
                     message = "The action may have succeeded, but the updated screen tree " +
@@ -166,10 +156,6 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         )
     }
 
-    /**
-     * Captures the screen, optionally waiting first when [ScreenOpArgs.hasExplicitWaitMode]
-     * is true. Without an explicit wait request, captures immediately (legacy read behavior).
-     */
     private suspend fun captureAfterOptionalWait(args: ScreenOpArgs): Result<ScreenSnapshot> {
         sensitivePageBlock()?.let { return Result.failure(SensitivePageBlockedException(it.message.orEmpty())) }
         if (!args.hasExplicitWaitMode) return AccessibilityController.captureScreen()
@@ -186,7 +172,6 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
         }
     }
 
-    /** Waits before a search when the agent explicitly requested it. */
     private suspend fun waitBeforeSearch(args: ScreenOpArgs) {
         if (!args.hasExplicitWaitMode) return
         if (args.waitMode == "delay") {
@@ -199,6 +184,13 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
     private fun sensitivePageBlock(): TextToolResult? {
         val decision = SensitivePageGuard.evaluateCurrent()
         if (!decision.blocked) return null
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+            riskLevel = SecurityRiskLevel.HIGH,
+            toolName = name,
+            policyCode = decision.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+            reason = "Sensitive context blocked before accessibility screen access.",
+        )
         return TextToolResult.failure(
             code = "SENSITIVE_PAGE_BLOCKED",
             message = SensitivePageGuard.blockedMessage(decision),
