@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  * This fallback can fill an editable box after explicit user action, but never clicks Send.
  *
  * Fail-closed rules:
- * - exactly one editable target must exist;
+ * - exactly one visible, enabled editable target must exist;
  * - the supported foreground package must still match; and
  * - the accessibility session id captured when the suggestion was created must still match.
  *
@@ -163,11 +163,14 @@ object ChatAccessibilityFallback {
         mutableSnapshot.value = Snapshot()
     }
 
-    private fun isEditableInput(node: AccessibilityNodeInfo): Boolean =
-        node.isEditable || node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+    private fun isEditableInput(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isVisibleToUser || !node.isEnabled) return false
+        return node.isEditable ||
+            node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+    }
 
     private fun isSendControl(node: AccessibilityNodeInfo): Boolean {
-        if (!node.isClickable) return false
+        if (!node.isVisibleToUser || !node.isEnabled || !node.isClickable) return false
         val candidates = sequenceOf(node.text, node.contentDescription)
             .mapNotNull { it?.toString()?.trim()?.lowercase() }
             .filter(String::isNotEmpty)
