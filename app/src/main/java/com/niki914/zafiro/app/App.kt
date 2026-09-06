@@ -43,7 +43,7 @@ class App : Application() {
         // Notification-based chat assistance uses an isolated one-shot LLM session and keeps
         // inbound bodies/generated suggestions in memory only. Local policy gates every model
         // request and is checked again immediately before any RemoteInput dispatch.
-        MessageAssistantCoordinator.start(applicationScope)
+        MessageAssistantCoordinator.start(applicationScope, applicationContext)
         RuntimeEnvironment.install(createAppRuntimeBridge())
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         DynamicColors.applyToActivitiesIfAvailable(this)
