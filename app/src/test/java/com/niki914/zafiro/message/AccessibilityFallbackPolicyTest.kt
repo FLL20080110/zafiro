@@ -130,4 +130,43 @@ class AccessibilityFallbackPolicyTest {
             )
         )
     }
+
+    @Test
+    fun rejectsChineseSearchField() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = true,
+                supportsSetText = true,
+                semanticLabel = "搜索",
+            )
+        )
+    }
+
+    @Test
+    fun rejectsEnglishSearchViewId() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = true,
+                supportsSetText = true,
+                semanticLabel = "com.tencent.mobileqq:id/search_input",
+            )
+        )
+    }
+
+    @Test
+    fun normalChatHintRemainsEligible() {
+        assertTrue(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = true,
+                supportsSetText = true,
+                semanticLabel = "输入消息",
+            )
+        )
+    }
 }
