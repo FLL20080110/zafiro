@@ -90,6 +90,35 @@ class ToolPermissionCoordinatorTest {
     }
 
     @Test
+    fun temporaryGrantTtlIsBoundedAndRejectsNonPositiveValues() {
+        assertNull(ToolPermissionCoordinator.normalizedTemporaryGrantMillis(null))
+        assertNull(ToolPermissionCoordinator.normalizedTemporaryGrantMillis(0L))
+        assertNull(ToolPermissionCoordinator.normalizedTemporaryGrantMillis(-1L))
+        assertEquals(
+            5 * 60 * 1000L,
+            ToolPermissionCoordinator.normalizedTemporaryGrantMillis(5 * 60 * 1000L),
+        )
+        assertEquals(
+            ToolPermissionCoordinator.MAX_TEMPORARY_GRANT_MILLIS,
+            ToolPermissionCoordinator.normalizedTemporaryGrantMillis(Long.MAX_VALUE),
+        )
+    }
+
+    @Test
+    fun temporaryGrantExpirySaturatesInsteadOfOverflowing() {
+        assertEquals(
+            Long.MAX_VALUE,
+            ToolPermissionCoordinator.saturatedExpiryNanos(
+                Long.MAX_VALUE - 10L,
+                ToolPermissionCoordinator.MAX_TEMPORARY_GRANT_MILLIS,
+            ),
+        )
+        assertTrue(
+            ToolPermissionCoordinator.saturatedExpiryNanos(100L, 1_000L) > 100L,
+        )
+    }
+
+    @Test
     fun freeformRiskReasonIsNotCopiedIntoAuditRecord() = runTest {
         ToolPermissionCoordinator.canRequestUserConfirmation = true
         val secret = "Bearer super-secret-token otp=123456"
