@@ -20,9 +20,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
              uri = null,
              client = null,
          )
-@@ -386,5 +385,12 @@ private fun ToolPermissionDialog() {
-     }
- 
+@@ -388,2 +387,9 @@ private fun ToolPermissionDialog() {
      val request = pending ?: return
 +    val riskLevelLabel = when (request.riskLevel) {
 +        SecurityRiskLevel.INFO -> stringResource(R.string.tool_permission_risk_info)
@@ -32,8 +30,6 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 +        SecurityRiskLevel.CRITICAL -> stringResource(R.string.tool_permission_risk_critical)
 +    }
      LiquidDialog(
-         visible = true,
-         onDismissRequest = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
 @@ -407,6 +413,22 @@ private fun ToolPermissionDialog() {
                      style = MaterialTheme.typography.bodyMedium,
                      color = MaterialTheme.colorScheme.onSurfaceVariant,
