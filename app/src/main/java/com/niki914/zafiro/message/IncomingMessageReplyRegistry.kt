@@ -5,6 +5,7 @@ import android.app.RemoteInput
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
+import com.niki914.zafiro.repo.MessageAssistantSettings
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
