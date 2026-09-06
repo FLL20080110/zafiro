@@ -44,7 +44,10 @@ object RecentConversationRegistry {
     }
 
     @Synchronized
-    internal fun clearForTest() {
+    fun clear() {
         mutableEntries.value = emptyList()
     }
+
+    @Synchronized
+    internal fun clearForTest() = clear()
 }
