@@ -1,5 +1,6 @@
 package com.niki914.zafiro.chat
 
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
@@ -86,6 +87,28 @@ class ToolPermissionCoordinatorTest {
         assertEquals(ToolPermissionResponse.DENIED_UNAVAILABLE, hostResult)
         assertNull(ToolPermissionCoordinator.pendingConfirmation.value)
         assertTrue(SecurityAuditLog.events.value.isNotEmpty())
+    }
+
+    @Test
+    fun freeformRiskReasonIsNotCopiedIntoAuditRecord() = runTest {
+        ToolPermissionCoordinator.canRequestUserConfirmation = true
+        val secret = "Bearer super-secret-token otp=123456"
+        val request = request(command = "settings put secure test_key 1").copy(riskReason = secret)
+
+        val pending = async { ToolPermissionCoordinator.confirm(request) }
+        runCurrent()
+
+        val requested = SecurityAuditLog.events.value.single {
+            it.kind == SecurityAuditKind.PERMISSION_REQUESTED
+        }
+        assertFalse(requested.toString().contains(secret))
+        assertFalse(requested.toString().contains("super-secret-token"))
+        assertFalse(requested.toString().contains("123456"))
+        assertEquals("CONFIRM_REQUESTED", requested.policyCode)
+        assertEquals("Explicit user confirmation required.", requested.reason)
+
+        ToolPermissionCoordinator.respond(request.id, allowed = false)
+        assertEquals(ToolPermissionResponse.DENIED_BY_USER, pending.await())
     }
 
     private fun request(command: String) = ToolPermissionRequest(
