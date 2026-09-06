@@ -3,6 +3,10 @@ package com.niki914.zafiro.repo
 import com.niki914.store.StoreDescriptorRegistry
 import com.niki914.zafiro.chat.agentic.accessibility.SensitiveAppPolicyRegistry
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -14,9 +18,12 @@ import kotlinx.coroutines.sync.withLock
  *
  * Policy mutations are serialized across persistence, runtime mirroring and audit emission so
  * concurrent UI toggles cannot leave the process-local registry older than the durable state.
+ * Mutations run in a process-lifetime repository scope: leaving the settings page may cancel the
+ * UI await, but cannot cancel a policy write that the user already requested.
  */
 object SensitiveAppSettings {
     private val policyMutex = Mutex()
+    private val policyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun packages(): Set<String> = policyMutex.withLock {
         readPackages()
@@ -26,27 +33,31 @@ object SensitiveAppSettings {
         val normalized = packageName.trim()
         if (normalized.isEmpty()) return packages()
 
-        return policyMutex.withLock {
-            var updated: Set<String> = emptySet()
-            var changed = false
-            XRepo.updateJson(StoreDescriptorRegistry.APP_STATE_ID) { json ->
-                val current = AppStateSettingsCodec.parse(json)
-                val values = decode(current.sensitiveAppPackagesCsv).toMutableSet()
-                val wasPaused = normalized in values
-                if (paused) values += normalized else values -= normalized
-                changed = wasPaused != paused
-                updated = values.toSortedSet()
-                AppStateSettingsCodec.encode(
-                    current.copy(sensitiveAppPackagesCsv = encode(updated))
-                )
+        // This Deferred is owned by policyScope rather than the calling UI scope. Cancellation of
+        // a Composable/page after the toggle therefore stops only its await, not the durable write.
+        return policyScope.async {
+            policyMutex.withLock {
+                var updated: Set<String> = emptySet()
+                var changed = false
+                XRepo.updateJson(StoreDescriptorRegistry.APP_STATE_ID) { json ->
+                    val current = AppStateSettingsCodec.parse(json)
+                    val values = decode(current.sensitiveAppPackagesCsv).toMutableSet()
+                    val wasPaused = normalized in values
+                    if (paused) values += normalized else values -= normalized
+                    changed = wasPaused != paused
+                    updated = values.toSortedSet()
+                    AppStateSettingsCodec.encode(
+                        current.copy(sensitiveAppPackagesCsv = encode(updated))
+                    )
+                }
+                syncRuntime(updated)
+                if (changed) {
+                    // Deliberately do not put the app label or package name into historical audit data.
+                    SecurityAuditLog.recordSensitiveAppPolicyChange(paused)
+                }
+                updated
             }
-            syncRuntime(updated)
-            if (changed) {
-                // Deliberately do not put the app label or package name into historical audit data.
-                SecurityAuditLog.recordSensitiveAppPolicyChange(paused)
-            }
-            updated
-        }
+        }.await()
     }
 
     suspend fun reloadRuntime(): Set<String> = policyMutex.withLock {
