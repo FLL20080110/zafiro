@@ -102,6 +102,7 @@ import com.niki914.zafiro.app.ui.model.HomeToolStatus
 import com.niki914.zafiro.app.ui.model.ToolPresentation
 import com.niki914.zafiro.app.ui.nav.TextTitle
 import com.niki914.zafiro.app.ui.nav.TopBarActionSpec
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.repo.UpdateCheckHolder
 import kotlinx.coroutines.delay
@@ -362,17 +363,23 @@ private fun ToolPermissionDialog() {
     LaunchedEffect(pending?.id) {
         val request = pending ?: return@LaunchedEffect
         if (MainActivity.isResumed) return@LaunchedEffect
-        val command = request.command.let { if (it.length > 80) it.take(80) + "…" else it }
         XIpcBridge.postNotification(
             context = context,
             title = context.getString(R.string.tool_permission_notification_title),
-            content = context.getString(R.string.tool_permission_notification_content, command),
+            content = context.getString(R.string.tool_permission_notification_content),
             uri = null,
             client = null,
         )
     }
 
     val request = pending ?: return
+    val riskLevelLabel = when (request.riskLevel) {
+        SecurityRiskLevel.INFO -> stringResource(R.string.tool_permission_risk_info)
+        SecurityRiskLevel.LOW -> stringResource(R.string.tool_permission_risk_low)
+        SecurityRiskLevel.MEDIUM -> stringResource(R.string.tool_permission_risk_medium)
+        SecurityRiskLevel.HIGH -> stringResource(R.string.tool_permission_risk_high)
+        SecurityRiskLevel.CRITICAL -> stringResource(R.string.tool_permission_risk_critical)
+    }
     LiquidDialog(
         visible = true,
         onDismissRequest = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
@@ -392,6 +399,22 @@ private fun ToolPermissionDialog() {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = stringResource(R.string.tool_permission_risk_level, riskLevelLabel),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (request.riskLevel >= SecurityRiskLevel.HIGH) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                request.riskReason?.takeIf { it.isNotBlank() }?.let { reason ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_risk_reason, reason),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
