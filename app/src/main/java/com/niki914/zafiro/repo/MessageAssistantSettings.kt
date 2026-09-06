@@ -92,8 +92,14 @@ object MessageAssistantSettings {
         return snapshot()
     }
 
-    suspend fun evaluate(message: IncomingChatMessage): Decision {
-        val policy = snapshot()
+    suspend fun evaluate(message: IncomingChatMessage): Decision = decide(snapshot(), message)
+
+    /**
+     * Pure deterministic policy decision. Keep all send authorization gates here so UI/model code
+     * cannot bypass privacy mode, sensitive-content blocking, per-app enablement, trusted-chat
+     * allowlisting, or the requirement for a real system RemoteInput reply capability.
+     */
+    fun decide(policy: Snapshot, message: IncomingChatMessage): Decision {
         if (policy.mode == Mode.OFF || message.packageName !in policy.enabledPackages) {
             return Decision.IGNORE
         }
