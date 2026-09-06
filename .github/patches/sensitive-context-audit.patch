@@ -8,7 +8,7 @@ index 9caeba5..0000000 100644
 +import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 +import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 +import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
-@@ -186,2 +189,10 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
+@@ -186,2 +189,9 @@ class ScreenOperationAccessibilityBuiltin : TextResultBuiltinTool() {
          val decision = SensitivePageGuard.evaluateCurrent()
          if (!decision.blocked) return null
 +        SecurityAuditLog.record(
@@ -28,7 +28,7 @@ index 676bb9d..0000000 100644
 +import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 +import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 +import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
-@@ -125,2 +128,10 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
+@@ -125,2 +128,9 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
          val decision = SensitivePageGuard.evaluateCurrent()
          if (!decision.blocked) return null
 +        SecurityAuditLog.record(
