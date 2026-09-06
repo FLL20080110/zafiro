@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import com.niki914.logging.Logger
 import com.niki914.zafiro.chat.EphemeralLlmClient
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
@@ -127,6 +128,12 @@ object MessageAssistantCoordinator {
         }
         if (policy.privacyModeEnabled) return Result.failure(IllegalStateException("Accessibility fill blocked: privacy mode"))
         if (pending.message.sensitive) return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive message"))
+
+        val sensitivePageDecision = SensitivePageGuard.evaluateCurrent()
+        if (sensitivePageDecision.blocked) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive page"))
+        }
+
         val current = ChatAccessibilityFallback.snapshot.value
         if (current.packageName != pending.message.packageName ||
             !current.readyForManualFallback ||
