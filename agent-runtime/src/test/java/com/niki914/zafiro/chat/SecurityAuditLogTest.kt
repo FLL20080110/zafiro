@@ -1,5 +1,6 @@
 package com.niki914.zafiro.chat
 
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
@@ -41,6 +42,53 @@ class SecurityAuditLogTest {
         assertFalse(serializedEvent.contains("abc123"))
         assertFalse(serializedEvent.contains("123456"))
         assertFalse(serializedEvent.contains("secret-value"))
+    }
+
+    @Test
+    fun record_boundsAllPersistableTextBeforeUiOrDisk() {
+        val oversized = "x".repeat(SecurityAuditLog.MAX_TEXT_CHARS + 40)
+
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.POLICY_BLOCKED,
+            riskLevel = SecurityRiskLevel.HIGH,
+            toolName = "  $oversized  ",
+            ruleName = oversized,
+            policyCode = oversized,
+            reason = oversized,
+        )
+
+        val event = SecurityAuditLog.events.value.single()
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.toolName?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.ruleName?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.policyCode?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.reason?.length)
+    }
+
+    @Test
+    fun restorePersisted_reappliesBoundsAndDropsMalformedHash() {
+        val oversized = "y".repeat(SecurityAuditLog.MAX_TEXT_CHARS + 80)
+        SecurityAuditLog.restorePersisted(
+            listOf(
+                SecurityAuditEvent(
+                    id = 10L,
+                    timestampMs = 1234L,
+                    kind = SecurityAuditKind.POLICY_BLOCKED,
+                    riskLevel = SecurityRiskLevel.HIGH,
+                    toolName = oversized,
+                    ruleName = oversized,
+                    policyCode = oversized,
+                    reason = oversized,
+                    commandHashSha256 = "not-a-valid-sha256",
+                )
+            )
+        )
+
+        val event = SecurityAuditLog.events.value.single()
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.toolName?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.ruleName?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.policyCode?.length)
+        assertEquals(SecurityAuditLog.MAX_TEXT_CHARS, event.reason?.length)
+        assertNull(event.commandHashSha256)
     }
 
     @Test
