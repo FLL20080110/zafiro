@@ -9,6 +9,7 @@ import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.repo.SensitiveAppSettings
 import com.niki914.zafiro.repo.UpdateCheckHolder
 import com.niki914.zafiro.repo.XRepo
 import com.niki914.zafiro.runtime.createAppRuntimeBridge
@@ -43,6 +44,10 @@ class App : Application() {
         }
         applicationScope.launch {
             XRepo.tryPutDefaultSettings()
+        }
+        applicationScope.launch {
+            // Restore package-level sensitive-app protection before screen automation is used.
+            SensitiveAppSettings.reloadRuntime()
         }
         applicationScope.launch {
             XRepo.skills.seedDefaults()
