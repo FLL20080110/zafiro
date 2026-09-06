@@ -31,6 +31,7 @@ import com.niki914.zafiro.chat.agentic.PromptComposer
 import com.niki914.zafiro.chat.agentic.PromptComposerInput
 import com.niki914.zafiro.chat.agentic.ToolManager
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
@@ -330,6 +331,18 @@ object LLMController {
         query: String,
         fromUserInterface: Boolean = false,
     ): Flow<LlmStreamEvent> = channelFlow {
+        // Turn-level sensitive-page gate. Evaluate locally before refresh() so
+        // neither the user query nor any runtime prompt/context can reach a cloud
+        // model while a password, OTP, or payment page is in the foreground.
+        // Leaving the page automatically restores the next turn; no page text is
+        // retained and no background polling is required.
+        val sensitivePage = SensitivePageGuard.evaluateCurrent()
+        if (sensitivePage.blocked) {
+            Logger.w(LOG_TAG, "round blocked by sensitive page kind=${sensitivePage.kind} reason=${sensitivePage.reasonCode}")
+            send(LlmStreamEvent.Error(message = SensitivePageGuard.blockedMessage(sensitivePage), code = null))
+            return@channelFlow
+        }
+
         // 确认型执行规则按来源区分：UI 直连可弹窗；宿主路径默认拒绝（英文错误回给 Agent）
         ToolPermissionCoordinator.canRequestUserConfirmation = fromUserInterface
         try {
