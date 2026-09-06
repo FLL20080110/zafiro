@@ -102,6 +102,8 @@ private fun eventHeader(event: SecurityAuditEvent): String {
         SecurityAuditKind.TEMPORARY_GRANT_CREATED -> stringResource(R.string.security_audit_kind_temporary_grant_created)
         SecurityAuditKind.TEMPORARY_GRANT_USED -> stringResource(R.string.security_audit_kind_temporary_grant_used)
         SecurityAuditKind.POLICY_BLOCKED -> stringResource(R.string.security_audit_kind_policy_blocked)
+        SecurityAuditKind.PRIVACY_BLOCKED -> stringResource(R.string.security_audit_kind_privacy_blocked)
+        SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED -> stringResource(R.string.security_audit_kind_sensitive_context_blocked)
         SecurityAuditKind.TEMPORARY_GRANTS_CLEARED -> stringResource(R.string.security_audit_kind_temporary_grants_cleared)
     }
     val risk = riskLabel(event.riskLevel)
