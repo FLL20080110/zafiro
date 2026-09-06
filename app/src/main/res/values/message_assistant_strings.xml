@@ -12,6 +12,8 @@
     <string name="message_assistant_mode_suggest">仅建议回复</string>
     <string name="message_assistant_mode_auto">自动回复</string>
     <string name="message_assistant_auto_warning">自动回复仍只允许发送到可信会话，并且验证码、密码、支付等敏感消息始终阻断。</string>
+    <string name="message_assistant_accessibility_fallback">无障碍兼容填入</string>
+    <string name="message_assistant_accessibility_fallback_summary">仅在通知不支持系统回复时使用；需要你主动点“填入输入框”，不会自动点击发送。默认关闭。</string>
     <string name="message_assistant_trusted_count">已配置可信会话：%1$d</string>
     <string name="message_assistant_safety_note">可信会话从本机最近识别到的会话中选择。聊天正文和建议回复不会写入安全审计；隐私模式下不会把聊天内容上传到云端模型。</string>
     <string name="message_assistant_latest_suggestion_title">最新建议回复</string>
