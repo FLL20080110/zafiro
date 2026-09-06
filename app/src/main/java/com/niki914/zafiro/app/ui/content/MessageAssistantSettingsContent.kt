@@ -185,7 +185,12 @@ fun MessageAssistantSettingsContent() {
                         snapshot = before?.copy(accessibilityFallbackEnabled = action.checked)
                         scope.launch {
                             runCatching { MessageAssistantSettings.setAccessibilityFallbackEnabled(action.checked) }
-                                .onSuccess { snapshot = it }
+                                .onSuccess {
+                                    snapshot = it
+                                    if (!action.checked) {
+                                        MessageAssistantCoordinator.invalidateAccessibilitySuggestions(context)
+                                    }
+                                }
                                 .onFailure {
                                     Logger.w(LOG_TAG, "accessibility fallback update failed ${it.message}")
                                     snapshot = runCatching { MessageAssistantSettings.snapshot() }
