@@ -18,8 +18,8 @@ import com.niki914.zafiro.app.MainActivity
  * User-visible surface for generated chat suggestions.
  *
  * The original incoming message body is intentionally never placed in the notification. Only the
- * locally generated suggestion and the non-secret conversation label are shown. Nothing here is
- * persisted by Zafiro or written to the security audit log.
+ * generated suggestion and the conversation label are shown. The one-time send action carries only
+ * an opaque suggestion id; reply text, sender and source message are never copied into Intent extras.
  */
 object MessageAssistantSuggestionNotifier {
     private const val LOG_TAG = "niki914_nexus_MessageSuggestion"
@@ -58,6 +58,23 @@ object MessageAssistantSuggestionNotifier {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
+        if (suggestion.manualSendAvailable) {
+            val sendIntent = Intent(appContext, MessageSuggestionActionReceiver::class.java)
+                .setAction(MessageSuggestionActionReceiver.ACTION_SEND_SUGGESTION)
+                .putExtra(MessageSuggestionActionReceiver.EXTRA_SUGGESTION_ID, suggestion.id)
+            val sendPendingIntent = PendingIntent.getBroadcast(
+                appContext,
+                suggestion.id.hashCode(),
+                sendIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                android.R.drawable.ic_menu_send,
+                "发送建议",
+                sendPendingIntent,
+            )
+        }
+
         runCatching {
             NotificationManagerCompat.from(appContext).notify(
                 notificationId(suggestion.packageName, suggestion.conversation),
@@ -66,6 +83,12 @@ object MessageAssistantSuggestionNotifier {
         }.onFailure {
             Logger.w(LOG_TAG, "show suggestion failed ${it.message}")
         }
+    }
+
+    fun dismiss(context: Context, packageName: String, conversation: String) {
+        NotificationManagerCompat.from(context.applicationContext).cancel(
+            notificationId(packageName, conversation),
+        )
     }
 
     private fun ensureChannel(context: Context) {
