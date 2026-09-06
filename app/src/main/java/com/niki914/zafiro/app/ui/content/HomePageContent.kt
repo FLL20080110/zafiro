@@ -415,6 +415,13 @@ private fun ToolPermissionDialog() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                request.commandExplanation.takeIf { it.isNotBlank() }?.let { explanation ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_command_explanation, explanation),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
