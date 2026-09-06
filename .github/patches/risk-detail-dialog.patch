@@ -1,13 +1,13 @@
 diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
-@@ -97,6 +97,7 @@ import com.niki914.zafiro.app.ui.nav.TextTitle
+@@ -97,4 +97,5 @@ import com.niki914.zafiro.app.ui.nav.TextTitle
  import com.niki914.zafiro.app.ui.nav.TopBarActionSpec
 +import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
  import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
  import com.niki914.zafiro.repo.UpdateCheckHolder
  import kotlinx.coroutines.delay
-@@ -373,12 +374,10 @@ private fun ToolPermissionDialog() {
+@@ -373,11 +374,10 @@ private fun ToolPermissionDialog() {
      LaunchedEffect(pending?.id) {
          val request = pending ?: return@LaunchedEffect
          if (MainActivity.isResumed) return@LaunchedEffect
@@ -20,7 +20,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
              uri = null,
              client = null,
          )
-@@ -386,6 +385,13 @@ private fun ToolPermissionDialog() {
+@@ -386,5 +385,12 @@ private fun ToolPermissionDialog() {
      }
  
      val request = pending ?: return
@@ -34,7 +34,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
      LiquidDialog(
          visible = true,
          onDismissRequest = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
-@@ -407,6 +413,23 @@ private fun ToolPermissionDialog() {
+@@ -407,6 +413,22 @@ private fun ToolPermissionDialog() {
                      style = MaterialTheme.typography.bodyMedium,
                      color = MaterialTheme.colorScheme.onSurfaceVariant,
                  )
@@ -60,7 +60,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
 --- a/app/src/main/res/values/strings.xml
 +++ b/app/src/main/res/values/strings.xml
-@@ -235,12 +235,19 @@
+@@ -235,10 +235,17 @@
      <string name="execution_rules_enabled_mode_confirm">询问我</string>
      <string name="tool_permission_dialog_title">AI 请求执行操作</string>
      <string name="tool_permission_request_intro">工具「%1$s」请求执行以下命令：</string>
