@@ -37,6 +37,15 @@ class ShellCommandSafetyPolicy(
         // user-defined execution rules.
         when (val builtIn = candidates.evaluateBuiltInProtection()) {
             is BuiltInProtection.Deny -> {
+                SecurityAuditLog.record(
+                    kind = SecurityAuditKind.POLICY_BLOCKED,
+                    riskLevel = SecurityRiskLevel.CRITICAL,
+                    toolName = toolName,
+                    ruleName = builtIn.name,
+                    policyCode = "BUILTIN_CRITICAL_BLOCKED",
+                    reason = builtIn.reason,
+                    command = command,
+                )
                 return ShellCommandPolicyDecision(
                     allowed = false,
                     code = "BUILTIN_CRITICAL_BLOCKED",
