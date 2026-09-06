@@ -31,7 +31,6 @@ data class SecurityAuditEvent(
     val policyCode: String? = null,
     val reason: String? = null,
     val commandHashSha256: String? = null,
-    val commandPreview: String? = null,
 )
 
 /**
@@ -40,12 +39,12 @@ data class SecurityAuditEvent(
  * Recording remains in-memory and synchronous so security decisions never wait for disk I/O.
  * The Android app layer may restore a minimized persisted snapshot through [restorePersisted]
  * and subscribe to [events] for asynchronous app-private persistence. No upload path exists
- * here, and no second full copy of a shell command is retained: only SHA-256 plus a short,
- * redacted preview.
+ * here. Shell commands are never retained in plaintext or as a preview; when correlation is
+ * useful, only their SHA-256 fingerprint is kept.
  */
 object SecurityAuditLog {
     const val MAX_EVENTS = 200
-    private const val MAX_PREVIEW_CHARS = 160
+    private const val MAX_REASON_CHARS = 160
 
     private val idCounter = AtomicLong(0L)
     private val lock = Any()
@@ -71,9 +70,8 @@ object SecurityAuditLog {
             toolName = toolName?.takeIf(String::isNotBlank),
             ruleName = ruleName?.takeIf(String::isNotBlank),
             policyCode = policyCode?.takeIf(String::isNotBlank),
-            reason = reason?.takeIf(String::isNotBlank)?.take(MAX_PREVIEW_CHARS),
+            reason = reason?.takeIf(String::isNotBlank)?.take(MAX_REASON_CHARS),
             commandHashSha256 = normalizedCommand?.let(::sha256),
-            commandPreview = normalizedCommand?.let(::redactedPreview),
         )
         synchronized(lock) {
             eventFlow.value = (eventFlow.value + event).takeLast(MAX_EVENTS)
@@ -102,24 +100,8 @@ object SecurityAuditLog {
         }
     }
 
-    private fun redactedPreview(command: String): String {
-        var value = command.replace(Regex("\\s+"), " ").trim()
-        SECRET_ASSIGNMENT_PATTERNS.forEach { pattern ->
-            value = pattern.replace(value) { match ->
-                val prefix = match.groupValues.getOrNull(1).orEmpty()
-                "$prefix<redacted>"
-            }
-        }
-        return value.take(MAX_PREVIEW_CHARS)
-    }
-
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString(separator = "") { byte -> "%02x".format(byte) }
-
-    private val SECRET_ASSIGNMENT_PATTERNS = listOf(
-        Regex("(?i)\\b((?:password|passwd|pwd|token|api[_-]?key|secret)\\s*[=:]\\s*)[^\\s;&|]+"),
-        Regex("(?i)\\b((?:authorization)\\s*[:=]\\s*(?:bearer\\s+)?)\\S+"),
-    )
 }
