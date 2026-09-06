@@ -3,6 +3,9 @@ package com.niki914.zafiro.message
 import android.content.Context
 import com.niki914.logging.Logger
 import com.niki914.zafiro.chat.EphemeralLlmClient
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.repo.MessageAssistantSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 object MessageAssistantCoordinator {
     private const val LOG_TAG = "niki914_nexus_MessageAssistantCoordinator"
     private const val AUTO_REPLY_COOLDOWN_MS = 30_000L
+    private const val MAX_REPLY_CHARS = 500
 
     data class Suggestion(
         val packageName: String,
@@ -54,6 +58,9 @@ object MessageAssistantCoordinator {
         if (initialDecision != MessageAssistantSettings.Decision.SUGGEST_ONLY &&
             initialDecision != MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED
         ) {
+            if (initialDecision != MessageAssistantSettings.Decision.IGNORE) {
+                recordBlocked(initialDecision)
+            }
             return
         }
 
@@ -62,19 +69,43 @@ object MessageAssistantCoordinator {
                 query = buildQuery(message),
                 systemPrompt = SYSTEM_PROMPT,
             )
-        }.getOrElse {
-            Logger.w(LOG_TAG, "reply generation failed ${it.message}")
+        }.map(::sanitizeGeneratedReply)
+            .getOrElse {
+                Logger.w(LOG_TAG, "reply generation failed ${it.message}")
+                return
+            }
+
+        if (generated.isBlank()) {
+            Logger.w(LOG_TAG, "reply generation returned blank output")
             return
         }
 
         var autoSent = false
-        if (initialDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED &&
-            allowAutoReplyNow(message)
-        ) {
-            autoSent = IncomingMessageReplyRegistry.send(message, generated).isSuccess
-            if (autoSent) {
-                lastAutoReplyAtByConversation[MessageAssistantSettings.conversationKey(message)] =
-                    System.currentTimeMillis()
+        if (initialDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
+            if (!allowAutoReplyNow(message)) {
+                recordBlocked(MessageAssistantSettings.Decision.BLOCKED_UNTRUSTED, "AUTO_REPLY_COOLDOWN")
+            } else {
+                val sendResult = IncomingMessageReplyRegistry.send(message, generated)
+                autoSent = sendResult.isSuccess
+                if (autoSent) {
+                    lastAutoReplyAtByConversation[MessageAssistantSettings.conversationKey(message)] =
+                        System.currentTimeMillis()
+                    SecurityAuditLog.record(
+                        kind = SecurityAuditKind.MESSAGE_REPLY_SENT,
+                        riskLevel = SecurityRiskLevel.INFO,
+                        toolName = "message_assistant",
+                        policyCode = "MESSAGE_AUTO_REPLY_SENT",
+                        reason = "Message assistant sent an authorized system reply.",
+                    )
+                } else {
+                    SecurityAuditLog.record(
+                        kind = SecurityAuditKind.MESSAGE_REPLY_BLOCKED,
+                        riskLevel = SecurityRiskLevel.LOW,
+                        toolName = "message_assistant",
+                        policyCode = "MESSAGE_REPLY_SEND_FAILED",
+                        reason = "Message assistant reply dispatch failed or was rejected.",
+                    )
+                }
             }
         }
 
@@ -90,11 +121,38 @@ object MessageAssistantCoordinator {
         MessageAssistantSuggestionNotifier.show(context, suggestion)
     }
 
+    private fun recordBlocked(
+        decision: MessageAssistantSettings.Decision,
+        overrideCode: String? = null,
+    ) {
+        val code = overrideCode ?: when (decision) {
+            MessageAssistantSettings.Decision.BLOCKED_SENSITIVE -> "MESSAGE_SENSITIVE_BLOCKED"
+            MessageAssistantSettings.Decision.BLOCKED_PRIVACY -> "MESSAGE_PRIVACY_BLOCKED"
+            MessageAssistantSettings.Decision.BLOCKED_UNTRUSTED -> "MESSAGE_UNTRUSTED_BLOCKED"
+            MessageAssistantSettings.Decision.BLOCKED_NO_SYSTEM_REPLY -> "MESSAGE_NO_SYSTEM_REPLY"
+            else -> "MESSAGE_POLICY_BLOCKED"
+        }
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.MESSAGE_REPLY_BLOCKED,
+            riskLevel = if (decision == MessageAssistantSettings.Decision.BLOCKED_SENSITIVE) {
+                SecurityRiskLevel.HIGH
+            } else {
+                SecurityRiskLevel.LOW
+            },
+            toolName = "message_assistant",
+            policyCode = code,
+            reason = "Message assistant reply was blocked by local policy.",
+        )
+    }
+
     private fun allowAutoReplyNow(message: IncomingChatMessage): Boolean {
         val key = MessageAssistantSettings.conversationKey(message)
         val last = lastAutoReplyAtByConversation[key] ?: return true
         return System.currentTimeMillis() - last >= AUTO_REPLY_COOLDOWN_MS
     }
+
+    internal fun sanitizeGeneratedReply(value: String): String =
+        value.trim().take(MAX_REPLY_CHARS)
 
     private fun buildQuery(message: IncomingChatMessage): String = buildString {
         appendLine("Conversation: ${message.conversation}")
