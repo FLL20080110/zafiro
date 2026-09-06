@@ -12,8 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Short-lived in-memory registry for notification RemoteInput actions.
  *
- * PendingIntents/RemoteInputs are never persisted. A handle expires after a short window and the
- * send path always re-checks MessageAssistantSettings before dispatching.
+ * PendingIntents/RemoteInputs are never persisted. A handle expires after a short window and every
+ * send path re-checks durable local policy immediately before dispatching.
  */
 object IncomingMessageReplyRegistry {
     private const val HANDLE_TTL_MS = 5 * 60 * 1000L
@@ -34,14 +34,44 @@ object IncomingMessageReplyRegistry {
         return id
     }
 
+    /** Automatic replies require the full auto-reply allowlist policy. */
     suspend fun send(message: IncomingChatMessage, replyText: String): Result<Unit> {
-        val text = replyText.trim()
-        if (text.isEmpty()) return Result.failure(IllegalArgumentException("Reply text is empty"))
-
         val decision = MessageAssistantSettings.evaluate(message)
         if (decision != MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
             return Result.failure(IllegalStateException("Reply blocked by policy: $decision"))
         }
+        return dispatch(message, replyText)
+    }
+
+    /**
+     * Explicit user action from Zafiro's suggestion notification.
+     *
+     * The click itself is one-time approval, so permanent trusted-conversation membership is not
+     * required. It still fails closed for disabled app/mode, privacy mode, sensitive content,
+     * missing RemoteInput capability, or an expired reply handle.
+     */
+    suspend fun sendApproved(message: IncomingChatMessage, replyText: String): Result<Unit> {
+        val policy = MessageAssistantSettings.snapshot()
+        if (policy.mode == MessageAssistantSettings.Mode.OFF ||
+            message.packageName !in policy.enabledPackages
+        ) {
+            return Result.failure(IllegalStateException("Manual reply blocked: assistant disabled"))
+        }
+        if (policy.privacyModeEnabled) {
+            return Result.failure(IllegalStateException("Manual reply blocked: privacy mode"))
+        }
+        if (message.sensitive) {
+            return Result.failure(IllegalStateException("Manual reply blocked: sensitive message"))
+        }
+        if (!message.systemReplyAvailable) {
+            return Result.failure(IllegalStateException("Manual reply blocked: no system reply"))
+        }
+        return dispatch(message, replyText)
+    }
+
+    private fun dispatch(message: IncomingChatMessage, replyText: String): Result<Unit> {
+        val text = replyText.trim()
+        if (text.isEmpty()) return Result.failure(IllegalArgumentException("Reply text is empty"))
 
         val handleId = message.replyHandleId?.takeIf(String::isNotBlank)
             ?: return Result.failure(IllegalStateException("No system reply handle"))
