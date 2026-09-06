@@ -26,6 +26,10 @@ data class ToolPermissionRequest(
      */
     val commandExplanation: String = ShellCommandExplainer.explain(command),
     /**
+     * 本地确定性生成的最坏影响说明。只展示类别级后果，不复述命令参数。
+     */
+    val worstCaseImpact: String = ShellCommandExplainer.worstCaseImpact(command),
+    /**
      * 大于 0 时 UI 可以提供“临时允许”。授权范围严格绑定当前
      * toolName + matchedRuleName + command，且只保存在当前进程内存中。
      */
