@@ -109,6 +109,11 @@ fun SettingsDetailPageContent(
         return
     }
 
+    if (group == ZafiroSettingsGroup.SensitiveApps) {
+        SensitiveAppsSettingsContent()
+        return
+    }
+
     if (group == ZafiroSettingsGroup.SecurityAudit) {
         SecurityAuditSettingsContent()
         return
