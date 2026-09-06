@@ -1,13 +1,13 @@
 diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt
 --- a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt
 +++ b/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessibility/AccessibilityController.kt
-@@ -13,5 +13,6 @@ import android.view.accessibility.AccessibilityNodeInfo
+@@ -14,4 +14,5 @@ import android.view.accessibility.AccessibilityNodeInfo
  import android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
 +import android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS
  import android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK
  import android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
  import android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-@@ -584,7 +585,7 @@ object AccessibilityController {
+@@ -584,6 +585,6 @@ object AccessibilityController {
          if (node.isClickable) sb.append(", tap: true")
          if (node.isLongClickable) sb.append(", hold: true")
 -        if (node.isEditable) sb.append(", edit: true")
@@ -15,7 +15,7 @@ diff --git a/agent-runtime/src/main/java/com/niki914/zafiro/chat/agentic/accessi
          if (node.isScrollable) sb.append(", scroll: true")
          if (node.isChecked) sb.append(", checked: true")
  
-@@ -744,19 +745,39 @@ object AccessibilityController {
+@@ -744,20 +745,40 @@ object AccessibilityController {
          val success = serviceInstance!!.performAction(node, actionInt, text)
          if (success) {
              return BuiltinToolResult.success("action ${action.name} performed via accessibility")
