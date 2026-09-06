@@ -1,7 +1,7 @@
 package com.niki914.zafiro.app.ui.content
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,7 +32,7 @@ fun SecurityAuditSettingsContent() {
     val pageChromeContribution = remember(clearLabel) {
         PageChromeContribution(
             rightAction = TopBarActionSpec(
-                icon = Icons.Default.DeleteSweep,
+                icon = Icons.Default.Delete,
                 onClick = SecurityAuditLog::clear,
                 contentDescription = clearLabel,
             ),
