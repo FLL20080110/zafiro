@@ -49,6 +49,11 @@ object MessageAssistantCoordinator {
         }
     }
 
+    fun clearTransientState() {
+        mutableLatestSuggestion.value = null
+        lastAutoReplyAtByConversation.clear()
+    }
+
     private suspend fun handle(context: Context, message: IncomingChatMessage) {
         val initialDecision = runCatching { MessageAssistantSettings.evaluate(message) }
             .getOrElse {
