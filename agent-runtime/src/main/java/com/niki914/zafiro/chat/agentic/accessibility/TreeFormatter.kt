@@ -72,7 +72,7 @@ object TreeFormatter {
         val contentDesc = PruningRules.normalizeText(node.contentDescription?.toString() ?: "")
         val isClickable = node.isClickable
         val isLongClickable = node.isLongClickable
-        val isEditable = node.isEditable
+        val isEditable = node.supportsTextEditing()
         val isScrollable = node.isScrollable
         val isChecked = node.isChecked
 
