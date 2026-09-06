@@ -205,7 +205,8 @@ object ToolPermissionCoordinator {
         }
     }
 
-    internal fun normalizedTemporaryGrantMillis(value: Long?): Long? {
+    /** Single source of truth for both runtime enforcement and the confirmation UI label. */
+    fun normalizedTemporaryGrantMillis(value: Long?): Long? {
         val positive = value?.takeIf { it > 0L } ?: return null
         return positive.coerceAtMost(MAX_TEMPORARY_GRANT_MILLIS)
     }

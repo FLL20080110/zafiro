@@ -380,6 +380,28 @@ private fun ToolPermissionDialog() {
         SecurityRiskLevel.HIGH -> stringResource(R.string.tool_permission_risk_high)
         SecurityRiskLevel.CRITICAL -> stringResource(R.string.tool_permission_risk_critical)
     }
+    val temporaryGrantMillis = ToolPermissionCoordinator.normalizedTemporaryGrantMillis(
+        request.temporaryGrantMillis
+    )
+    val temporaryGrantLabel = temporaryGrantMillis?.let { duration ->
+        val durationText = when {
+            duration % (24L * 60L * 60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_days,
+                duration / (24L * 60L * 60L * 1000L),
+            )
+            duration % (60L * 60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_hours, duration / (60L * 60L * 1000L)
+            )
+            duration % (60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_minutes, duration / (60L * 1000L)
+            )
+            duration % 1000L == 0L -> stringResource(
+                R.string.tool_permission_duration_seconds, duration / 1000L
+            )
+            else -> stringResource(R.string.tool_permission_duration_millis, duration)
+        }
+        stringResource(R.string.tool_permission_allow_temporary, durationText)
+    }
     LiquidDialog(
         visible = true,
         onDismissRequest = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
@@ -460,9 +482,9 @@ private fun ToolPermissionDialog() {
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             )
-            if ((request.temporaryGrantMillis ?: 0L) > 0L) {
+            temporaryGrantLabel?.let { label ->
                 MaterialTintLiquidButton(
-                    text = stringResource(R.string.tool_permission_allow_5_minutes),
+                    text = label,
                     onClick = { ToolPermissionCoordinator.respondTemporary(request.id) },
                     modifier = Modifier.weight(1f),
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
