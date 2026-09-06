@@ -21,6 +21,7 @@ import com.niki914.uikit.infra.component.settings.SettingsSectionLayout
 import com.niki914.uikit.infra.component.settings.SettingsSectionSpec
 import com.niki914.uikit.infra.component.settings.SettingsSpecPageContent
 import com.niki914.zafiro.app.R
+import com.niki914.zafiro.message.MessageAssistantCoordinator
 import com.niki914.zafiro.message.RecentConversationRegistry
 import com.niki914.zafiro.repo.MessageAssistantSettings
 import kotlinx.coroutines.launch
@@ -45,6 +46,7 @@ fun MessageAssistantSettingsContent() {
     var showModeDialog by remember { mutableStateOf(false) }
     var notificationAccess by remember { mutableStateOf(false) }
     val recentConversations by RecentConversationRegistry.entries.collectAsState()
+    val latestSuggestion by MessageAssistantCoordinator.latestSuggestion.collectAsState()
 
     fun refreshNotificationAccess() {
         notificationAccess = NotificationManagerCompat
@@ -84,6 +86,30 @@ fun MessageAssistantSettingsContent() {
             )
         }
     }
+
+    val suggestionSections = latestSuggestion?.let { suggestion ->
+        listOf(
+            SettingsSectionSpec(
+                title = stringResource(R.string.message_assistant_latest_suggestion_title),
+                layout = SettingsSectionLayout.GroupedCard,
+                rows = listOf(
+                    SettingsRowSpec.Message(
+                        title = suggestion.conversation,
+                    ),
+                    SettingsRowSpec.Message(
+                        title = suggestion.text,
+                    ),
+                    SettingsRowSpec.Message(
+                        title = if (suggestion.autoSent) {
+                            stringResource(R.string.message_assistant_latest_suggestion_auto_sent)
+                        } else {
+                            stringResource(R.string.message_assistant_latest_suggestion_not_sent)
+                        },
+                    ),
+                ),
+            )
+        )
+    }.orEmpty()
 
     SettingsSpecPageContent(
         spec = SettingsPageSpec(
@@ -128,6 +154,7 @@ fun MessageAssistantSettingsContent() {
                         ),
                     ) + trustedRows,
                 ),
+            ) + suggestionSections + listOf(
                 SettingsSectionSpec(
                     layout = SettingsSectionLayout.GroupedCard,
                     rows = listOf(
