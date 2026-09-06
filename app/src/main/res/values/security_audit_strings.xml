@@ -9,7 +9,7 @@
     <string name="security_audit_event_rule">规则：%1$s</string>
     <string name="security_audit_event_policy">策略：%1$s</string>
     <string name="security_audit_event_reason">原因：%1$s</string>
-    <string name="security_audit_event_command">命令摘要：%1$s</string>
+    <string name="security_audit_event_command">命令 SHA-256：%1$s</string>
     <string name="security_audit_risk">风险：%1$s</string>
     <string name="security_audit_risk_info">信息</string>
     <string name="security_audit_risk_low">低</string>
