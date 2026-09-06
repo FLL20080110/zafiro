@@ -111,6 +111,29 @@ class ToolPermissionCoordinatorTest {
         assertEquals(ToolPermissionResponse.DENIED_BY_USER, pending.await())
     }
 
+    @Test
+    fun freeformRuleNameIsCollapsedBeforeAuditPersistence() = runTest {
+        ToolPermissionCoordinator.canRequestUserConfirmation = true
+        val secretRuleName = "My token rule Bearer super-secret-token otp=123456"
+        val request = request(command = "settings put secure test_key 1").copy(
+            matchedRuleName = secretRuleName,
+        )
+
+        val pending = async { ToolPermissionCoordinator.confirm(request) }
+        runCurrent()
+
+        val requested = SecurityAuditLog.events.value.single {
+            it.kind == SecurityAuditKind.PERMISSION_REQUESTED
+        }
+        assertEquals("User execution rule", requested.ruleName)
+        assertFalse(requested.toString().contains(secretRuleName))
+        assertFalse(requested.toString().contains("super-secret-token"))
+        assertFalse(requested.toString().contains("123456"))
+
+        ToolPermissionCoordinator.respond(request.id, allowed = false)
+        assertEquals(ToolPermissionResponse.DENIED_BY_USER, pending.await())
+    }
+
     private fun request(command: String) = ToolPermissionRequest(
         id = "request-1",
         toolName = "terminal",
