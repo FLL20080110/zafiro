@@ -13,6 +13,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 
@@ -53,5 +54,27 @@ class SensitiveAppSettingsTest {
         val runtime = SensitiveAppPolicyRegistry.snapshot().keys
         assertEquals(packages, durable)
         assertEquals(durable, runtime)
+    }
+
+    @Test
+    fun malformedPersistedPackageNamesAreDropped() {
+        assertEquals(
+            setOf("com.example.good", "org.example._valid2"),
+            SensitiveAppSettings.decode(
+                " com.example.good ,bad-name,com..broken,org.example._valid2,9invalid.start "
+            )
+        )
+    }
+
+    @Test
+    fun packageNameLengthIsBounded() {
+        val tooLong = "a".repeat(256)
+        assertNull(SensitiveAppSettings.normalizePackageName(tooLong))
+    }
+
+    @Test
+    fun persistedPolicyCountIsBounded() {
+        val csv = (1..700).joinToString(",") { "com.example.app$it" }
+        assertEquals(512, SensitiveAppSettings.decode(csv).size)
     }
 }
