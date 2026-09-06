@@ -19,6 +19,8 @@ enum class SecurityAuditKind {
     PRIVACY_BLOCKED,
     SENSITIVE_CONTEXT_BLOCKED,
     TEMPORARY_GRANTS_CLEARED,
+    SENSITIVE_APP_POLICY_ENABLED,
+    SENSITIVE_APP_POLICY_DISABLED,
 }
 
 data class SecurityAuditEvent(
@@ -76,6 +78,32 @@ object SecurityAuditLog {
         synchronized(lock) {
             eventFlow.value = (eventFlow.value + event).takeLast(MAX_EVENTS)
         }
+    }
+
+    /**
+     * Records a sensitive-app policy toggle without retaining the app label or package name.
+     * The audit trail only needs the fact that protection changed; package identifiers stay in
+     * the dedicated local settings store and do not become part of historical audit metadata.
+     */
+    fun recordSensitiveAppPolicyChange(paused: Boolean) {
+        record(
+            kind = if (paused) {
+                SecurityAuditKind.SENSITIVE_APP_POLICY_ENABLED
+            } else {
+                SecurityAuditKind.SENSITIVE_APP_POLICY_DISABLED
+            },
+            riskLevel = SecurityRiskLevel.INFO,
+            policyCode = if (paused) {
+                "SENSITIVE_APP_PAUSE_ENABLED"
+            } else {
+                "SENSITIVE_APP_PAUSE_DISABLED"
+            },
+            reason = if (paused) {
+                "Sensitive app pause policy enabled."
+            } else {
+                "Sensitive app pause policy disabled."
+            },
+        )
     }
 
     /**
