@@ -1,6 +1,7 @@
 package com.niki914.zafiro.message
 
 import android.app.Notification
+import android.app.RemoteInput
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -60,8 +61,28 @@ class IncomingMessageNotificationService : NotificationListenerService() {
                 conversation = conversation,
                 text = text,
                 postedAtMs = sbn.postTime,
+                systemReplyAvailable = notification.actions.orEmpty().any(::hasFreeFormReply),
+                sensitive = isSensitiveMessage(text),
             )
         )
+    }
+
+    private fun hasFreeFormReply(action: Notification.Action): Boolean {
+        return action.remoteInputs.orEmpty().any { input ->
+            input.allowFreeFormInput && input.resultKey.isNotBlank()
+        }
+    }
+
+    /**
+     * Conservative local-only sensitive classifier for chat auto-reply safety.
+     * False positives are acceptable here because this flag only blocks automation.
+     */
+    private fun isSensitiveMessage(text: String): Boolean {
+        val normalized = text.lowercase()
+        if (SENSITIVE_KEYWORDS.any(normalized::contains)) return true
+
+        // Common 4-8 digit verification/OTP formats. Keep this deterministic and local.
+        return OTP_PATTERN.containsMatchIn(normalized)
     }
 
     private companion object {
@@ -70,5 +91,23 @@ class IncomingMessageNotificationService : NotificationListenerService() {
             "com.tencent.mobileqq",
             "com.tencent.tim",
         )
+
+        val SENSITIVE_KEYWORDS = listOf(
+            "验证码",
+            "校验码",
+            "动态码",
+            "支付密码",
+            "登录密码",
+            "交易密码",
+            "银行卡",
+            "收款码",
+            "付款码",
+            "otp",
+            "verification code",
+            "one-time password",
+            "password",
+        )
+
+        val OTP_PATTERN = Regex("(?:^|\\D)\\d{4,8}(?:\\D|$)")
     }
 }
