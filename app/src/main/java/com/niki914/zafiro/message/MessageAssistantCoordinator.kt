@@ -17,12 +17,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Process-local orchestration for notification-based chat assistance.
- *
- * Message bodies and generated replies are kept in memory only. Policy is evaluated before any
- * model call and the RemoteInput send path evaluates it again immediately before dispatch.
- */
+/** Process-local orchestration for notification-based chat assistance. */
 object MessageAssistantCoordinator {
     private const val LOG_TAG = "niki914_nexus_MessageAssistantCoordinator"
     private const val AUTO_REPLY_COOLDOWN_MS = 30_000L
@@ -38,6 +33,7 @@ object MessageAssistantCoordinator {
         val generatedAtMs: Long,
         val autoSent: Boolean,
         val manualSendAvailable: Boolean,
+        val accessibilityFillAvailable: Boolean,
     )
 
     private data class PendingSuggestion(
@@ -55,9 +51,7 @@ object MessageAssistantCoordinator {
     fun start(scope: CoroutineScope, context: Context) {
         val appContext = context.applicationContext
         scope.launch {
-            IncomingMessageBus.events.collectLatest { message ->
-                handle(appContext, message)
-            }
+            IncomingMessageBus.events.collectLatest { message -> handle(appContext, message) }
         }
     }
 
@@ -67,19 +61,37 @@ object MessageAssistantCoordinator {
         pendingSuggestions.clear()
     }
 
-    suspend fun sendSuggestion(context: Context, suggestionId: String): Result<Unit> {
+    suspend fun useSuggestion(context: Context, suggestionId: String): Result<Unit> {
         pruneSuggestions()
         val pending = pendingSuggestions.remove(suggestionId)
             ?: return Result.failure(IllegalStateException("Suggestion unavailable or expired"))
 
-        val result = IncomingMessageReplyRegistry.sendApproved(pending.message, pending.text)
+        val result = if (pending.message.systemReplyAvailable) {
+            IncomingMessageReplyRegistry.sendApproved(pending.message, pending.text)
+        } else {
+            fillSuggestion(pending)
+        }
+
         if (result.isSuccess) {
+            val usedRemoteInput = pending.message.systemReplyAvailable
             SecurityAuditLog.record(
-                kind = SecurityAuditKind.MESSAGE_REPLY_SENT,
+                kind = if (usedRemoteInput) {
+                    SecurityAuditKind.MESSAGE_REPLY_SENT
+                } else {
+                    SecurityAuditKind.PERMISSION_ALLOWED
+                },
                 riskLevel = SecurityRiskLevel.INFO,
                 toolName = "message_assistant",
-                policyCode = "MESSAGE_MANUAL_REPLY_SENT",
-                reason = "User approved a one-time message assistant system reply.",
+                policyCode = if (usedRemoteInput) {
+                    "MESSAGE_MANUAL_REPLY_SENT"
+                } else {
+                    "MESSAGE_SUGGESTION_FILLED"
+                },
+                reason = if (usedRemoteInput) {
+                    "User approved a one-time message assistant system reply."
+                } else {
+                    "User approved filling a generated suggestion into the current chat input."
+                },
             )
             MessageAssistantSuggestionNotifier.dismiss(
                 context.applicationContext,
@@ -91,11 +103,35 @@ object MessageAssistantCoordinator {
                 kind = SecurityAuditKind.MESSAGE_REPLY_BLOCKED,
                 riskLevel = SecurityRiskLevel.LOW,
                 toolName = "message_assistant",
-                policyCode = "MESSAGE_MANUAL_REPLY_BLOCKED",
-                reason = "User-approved message reply was rejected by current local policy or system reply state.",
+                policyCode = "MESSAGE_MANUAL_ACTION_BLOCKED",
+                reason = "User-approved message suggestion action was rejected by current local policy or UI state.",
             )
         }
         return result
+    }
+
+    private suspend fun fillSuggestion(pending: PendingSuggestion): Result<Unit> {
+        val policy = MessageAssistantSettings.snapshot()
+        if (policy.mode == MessageAssistantSettings.Mode.OFF ||
+            pending.message.packageName !in policy.enabledPackages
+        ) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: assistant disabled"))
+        }
+        if (policy.privacyModeEnabled) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: privacy mode"))
+        }
+        if (pending.message.sensitive) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive message"))
+        }
+        val current = ChatAccessibilityFallback.snapshot.value
+        if (current.packageName != pending.message.packageName || !current.readyForManualFallback) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: chat input unavailable"))
+        }
+        return if (ChatAccessibilityFallback.fillCurrentInput(pending.message.packageName, pending.text)) {
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalStateException("Accessibility fill failed"))
+        }
     }
 
     private suspend fun handle(context: Context, message: IncomingChatMessage) {
@@ -107,9 +143,7 @@ object MessageAssistantCoordinator {
         if (initialDecision != MessageAssistantSettings.Decision.SUGGEST_ONLY &&
             initialDecision != MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED
         ) {
-            if (initialDecision != MessageAssistantSettings.Decision.IGNORE) {
-                recordBlocked(initialDecision)
-            }
+            if (initialDecision != MessageAssistantSettings.Decision.IGNORE) recordBlocked(initialDecision)
             return
         }
 
@@ -123,11 +157,7 @@ object MessageAssistantCoordinator {
                 Logger.w(LOG_TAG, "reply generation failed ${it.message}")
                 return
             }
-
-        if (generated.isBlank()) {
-            Logger.w(LOG_TAG, "reply generation returned blank output")
-            return
-        }
+        if (generated.isBlank()) return
 
         var autoSent = false
         if (initialDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
@@ -161,7 +191,12 @@ object MessageAssistantCoordinator {
         pruneSuggestions()
         val suggestionId = UUID.randomUUID().toString()
         val manualSendAvailable = !autoSent && message.systemReplyAvailable
-        if (manualSendAvailable) {
+        val fallback = ChatAccessibilityFallback.snapshot.value
+        val accessibilityFillAvailable = !autoSent &&
+            !message.systemReplyAvailable &&
+            fallback.packageName == message.packageName &&
+            fallback.readyForManualFallback
+        if (manualSendAvailable || accessibilityFillAvailable) {
             pendingSuggestions[suggestionId] = PendingSuggestion(
                 message = message,
                 text = generated,
@@ -177,6 +212,7 @@ object MessageAssistantCoordinator {
             generatedAtMs = System.currentTimeMillis(),
             autoSent = autoSent,
             manualSendAvailable = manualSendAvailable,
+            accessibilityFillAvailable = accessibilityFillAvailable,
         )
         mutableLatestSuggestion.value = suggestion
         MessageAssistantSuggestionNotifier.show(context, suggestion)
@@ -219,8 +255,7 @@ object MessageAssistantCoordinator {
         }
     }
 
-    internal fun sanitizeGeneratedReply(value: String): String =
-        value.trim().take(MAX_REPLY_CHARS)
+    internal fun sanitizeGeneratedReply(value: String): String = value.trim().take(MAX_REPLY_CHARS)
 
     private fun buildQuery(message: IncomingChatMessage): String = buildString {
         appendLine("Conversation: ${message.conversation}")
