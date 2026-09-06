@@ -7,6 +7,9 @@ import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
 import com.niki914.zafiro.chat.agentic.buildin.TextToolResult
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import kotlinx.coroutines.delay
 
 /**
@@ -76,16 +79,6 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
         }
     }
 
-    /**
-     * Executes a shell operation, then captures the updated screen according to [waitMode].
-     *
-     * When the shell operation itself fails, the screen is captured to provide a fresh
-     * tree for the LLM to retry with. For [SHELL_TIMEOUT] and [SHELL_SESSION_LOST] codes
-     * the action may have partially executed, so the message notes this uncertainty.
-     *
-     * Returns a [TextToolResult] — success with the YAML tree, or failure with
-     * an optional payload.
-     */
     private suspend fun executeShellAndCapture(
         waitMode: String,
         waitMs: Long,
@@ -93,9 +86,6 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
     ): TextToolResult {
         sensitivePageBlock()?.let { return it }
         val result = executor()
-
-        // An allowed shell action can navigate into a sensitive page. Re-check
-        // before serializing or returning any post-action accessibility tree.
         sensitivePageBlock()?.let { return it }
 
         if (!result.ok) {
@@ -125,7 +115,7 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
         sensitivePageBlock()?.let { return it }
         return capture.fold(
             onSuccess = { snapshot -> TextToolResult.success(snapshot.yaml) },
-            onFailure = { e ->
+            onFailure = {
                 TextToolResult.failure(
                     code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,
                     message = "The shell action may have succeeded, but the updated screen " +
@@ -139,6 +129,13 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
     private fun sensitivePageBlock(): TextToolResult? {
         val decision = SensitivePageGuard.evaluateCurrent()
         if (!decision.blocked) return null
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+            riskLevel = SecurityRiskLevel.HIGH,
+            toolName = name,
+            policyCode = decision.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+            reason = "Sensitive context blocked before shell screen access.",
+        )
         return TextToolResult.failure(
             code = "SENSITIVE_PAGE_BLOCKED",
             message = SensitivePageGuard.blockedMessage(decision),
