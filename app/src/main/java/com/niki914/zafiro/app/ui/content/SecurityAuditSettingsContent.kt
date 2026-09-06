@@ -107,6 +107,8 @@ private fun eventHeader(event: SecurityAuditEvent): String {
         SecurityAuditKind.TEMPORARY_GRANTS_CLEARED -> stringResource(R.string.security_audit_kind_temporary_grants_cleared)
         SecurityAuditKind.SENSITIVE_APP_POLICY_ENABLED -> stringResource(R.string.security_audit_kind_sensitive_app_policy_enabled)
         SecurityAuditKind.SENSITIVE_APP_POLICY_DISABLED -> stringResource(R.string.security_audit_kind_sensitive_app_policy_disabled)
+        SecurityAuditKind.MESSAGE_REPLY_SENT -> stringResource(R.string.security_audit_kind_message_reply_sent)
+        SecurityAuditKind.MESSAGE_REPLY_BLOCKED -> stringResource(R.string.security_audit_kind_message_reply_blocked)
     }
     val risk = riskLabel(event.riskLevel)
     val time = remember(event.timestampMs) {
