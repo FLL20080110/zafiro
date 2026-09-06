@@ -57,18 +57,21 @@ class IncomingMessageNotificationService : NotificationListenerService() {
         val replyAction = notification.actions.orEmpty().firstOrNull(::hasFreeFormReply)
         val replyHandleId = replyAction?.let(IncomingMessageReplyRegistry::register)
 
-        IncomingMessageBus.publish(
-            IncomingChatMessage(
-                packageName = packageName,
-                sender = sender,
-                conversation = conversation,
-                text = text,
-                postedAtMs = sbn.postTime,
-                systemReplyAvailable = replyHandleId != null,
-                sensitive = isSensitiveMessage(text),
-                replyHandleId = replyHandleId,
-            )
+        val message = IncomingChatMessage(
+            packageName = packageName,
+            sender = sender,
+            conversation = conversation,
+            text = text,
+            postedAtMs = sbn.postTime,
+            systemReplyAvailable = replyHandleId != null,
+            sensitive = isSensitiveMessage(text),
+            replyHandleId = replyHandleId,
         )
+
+        // Keep only non-body conversation metadata in memory so the settings UI can offer an
+        // explicit trust toggle without requiring users to type fragile internal keys.
+        RecentConversationRegistry.observe(message)
+        IncomingMessageBus.publish(message)
     }
 
     private fun hasFreeFormReply(action: Notification.Action): Boolean {
