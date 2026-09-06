@@ -1,5 +1,6 @@
 package com.niki914.zafiro.message
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -158,6 +159,21 @@ class AccessibilityFallbackPolicyTest {
     }
 
     @Test
+    fun rejectsObviousLoginOrContactFormFields() {
+        listOf("密码", "username", "email", "phone number", "address").forEach { label ->
+            assertFalse(
+                AccessibilityFallbackPolicy.isEditableCandidate(
+                    isVisibleToUser = true,
+                    isEnabled = true,
+                    isEditable = true,
+                    supportsSetText = true,
+                    semanticLabel = label,
+                )
+            )
+        }
+    }
+
+    @Test
     fun normalChatHintRemainsEligible() {
         assertTrue(
             AccessibilityFallbackPolicy.isEditableCandidate(
@@ -166,6 +182,22 @@ class AccessibilityFallbackPolicyTest {
                 isEditable = true,
                 supportsSetText = true,
                 semanticLabel = "输入消息",
+            )
+        )
+        assertTrue(AccessibilityFallbackPolicy.candidateScore("输入消息") > 0)
+        assertTrue(AccessibilityFallbackPolicy.candidateScore("reply") > 0)
+    }
+
+    @Test
+    fun neutralCustomChatFieldRemainsEligibleForVersionCompatibility() {
+        assertEquals(0, AccessibilityFallbackPolicy.candidateScore("com.tencent.mm:id/b4a"))
+        assertTrue(
+            AccessibilityFallbackPolicy.isEditableCandidate(
+                isVisibleToUser = true,
+                isEnabled = true,
+                isEditable = false,
+                supportsSetText = true,
+                semanticLabel = "com.tencent.mm:id/b4a",
             )
         )
     }
