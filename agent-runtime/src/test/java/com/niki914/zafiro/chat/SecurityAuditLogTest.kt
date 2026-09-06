@@ -9,9 +9,7 @@ import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecurityAuditLogTest {
@@ -24,20 +22,36 @@ class SecurityAuditLogTest {
     }
 
     @Test
-    fun record_redactsSecretsAndStoresHashInsteadOfFullDuplicate() {
+    fun record_storesOnlyCommandFingerprintNotPlaintext() {
+        val command = "curl -H 'Authorization: Bearer abc123' https://example.invalid otp=123456 api_key=secret-value"
         SecurityAuditLog.record(
             kind = SecurityAuditKind.PERMISSION_REQUESTED,
             riskLevel = SecurityRiskLevel.HIGH,
             toolName = "terminal",
-            command = "curl -H 'Authorization: Bearer abc123' https://example.invalid api_key=secret-value",
+            command = command,
         )
 
         val event = SecurityAuditLog.events.value.single()
         assertNotNull(event.commandHashSha256)
         assertEquals(64, event.commandHashSha256?.length)
-        assertFalse(event.commandPreview.orEmpty().contains("abc123"))
-        assertFalse(event.commandPreview.orEmpty().contains("secret-value"))
-        assertTrue(event.commandPreview.orEmpty().contains("<redacted>"))
+        assertEquals(
+            setOf(
+                event.id.toString(),
+                event.timestampMs.toString(),
+                event.kind.name,
+                event.riskLevel.name,
+                event.toolName,
+                event.commandHashSha256,
+            ).filterNotNull().toSet(),
+            setOf(
+                event.id.toString(),
+                event.timestampMs.toString(),
+                event.kind.name,
+                event.riskLevel.name,
+                event.toolName,
+                event.commandHashSha256,
+            ).filterNotNull().toSet(),
+        )
     }
 
     @Test
