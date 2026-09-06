@@ -9,12 +9,14 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.niki914.zafiro.app.overlay.PointerOverlay
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.IAccessibility
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 
 class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         AccessibilityController.setService(this)
+        SensitivePageGuard.installRootProvider { rootInActiveWindow }
         AccessibilityController.clearPointerOverlay()
         val overlay = PointerOverlay()
         overlay.init(this)
@@ -38,6 +40,7 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
     }
 
     override fun onDestroy() {
+        SensitivePageGuard.clearRootProvider()
         AccessibilityController.clearPointerOverlay()
         AccessibilityController.clearService()
         super.onDestroy()
