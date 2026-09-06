@@ -18,6 +18,10 @@ data class IncomingChatMessage(
     val conversation: String,
     val text: String,
     val postedAtMs: Long,
+    /** True only when the originating notification exposes a free-form RemoteInput reply action. */
+    val systemReplyAvailable: Boolean = false,
+    /** Local-only classification. Sensitive content must never enter an automatic reply path. */
+    val sensitive: Boolean = false,
 )
 
 object IncomingMessageBus {
