@@ -1,0 +1,15 @@
+--- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
++++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+@@ -417,6 +417,13 @@
+                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                     )
+                 }
++                request.worstCaseImpact.takeIf { it.isNotBlank() }?.let { impact ->
++                    Text(
++                        text = stringResource(R.string.tool_permission_worst_case_impact, impact),
++                        style = MaterialTheme.typography.bodySmall,
++                        color = MaterialTheme.colorScheme.error,
++                    )
++                }
+                 Text(
+                     text = request.command,
