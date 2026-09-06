@@ -23,5 +23,7 @@
     <string name="security_audit_kind_temporary_grant_created">已创建临时授权</string>
     <string name="security_audit_kind_temporary_grant_used">已使用临时授权</string>
     <string name="security_audit_kind_policy_blocked">已阻断</string>
+    <string name="security_audit_kind_privacy_blocked">隐私模式已阻断</string>
+    <string name="security_audit_kind_sensitive_context_blocked">敏感上下文已阻断</string>
     <string name="security_audit_kind_temporary_grants_cleared">已清除临时授权</string>
 </resources>
