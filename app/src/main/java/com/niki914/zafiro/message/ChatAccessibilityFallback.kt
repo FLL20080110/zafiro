@@ -7,11 +7,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * In-memory capability detector for the chat-app Accessibility fallback.
+ * In-memory capability detector and explicit text-fill bridge for chat-app Accessibility fallback.
  *
- * This first-stage bridge deliberately does not retain visible chat text. It only records whether
- * the foreground QQ/WeChat/TIM window exposes an editable input and a plausible send control.
- * RemoteInput remains the preferred reply path; this is only compatibility groundwork.
+ * Visible chat text is never retained. The fill handler is installed only while Zafiro's
+ * AccessibilityService is alive and re-reads the current foreground root at invocation time.
+ * This fallback can fill an editable box after explicit user action, but never clicks Send.
  */
 object ChatAccessibilityFallback {
     private const val MAX_VISITED_NODES = 400
@@ -23,12 +23,28 @@ object ChatAccessibilityFallback {
         val updatedAtElapsedMs: Long = 0L,
     ) {
         val readyForManualFallback: Boolean
-            get() = packageName in SUPPORTED_PACKAGES &&
-                editableInputAvailable && sendButtonAvailable
+            get() = packageName in SUPPORTED_PACKAGES && editableInputAvailable
     }
 
     private val mutableSnapshot = MutableStateFlow(Snapshot())
     val snapshot: StateFlow<Snapshot> = mutableSnapshot.asStateFlow()
+
+    @Volatile
+    private var fillHandler: ((expectedPackage: String, text: String) -> Boolean)? = null
+
+    fun installFillHandler(handler: (expectedPackage: String, text: String) -> Boolean) {
+        fillHandler = handler
+    }
+
+    fun clearFillHandler() {
+        fillHandler = null
+    }
+
+    fun fillCurrentInput(expectedPackage: String, text: String): Boolean {
+        val normalizedText = text.trim()
+        if (expectedPackage !in SUPPORTED_PACKAGES || normalizedText.isEmpty()) return false
+        return fillHandler?.invoke(expectedPackage, normalizedText) == true
+    }
 
     fun update(packageName: String?, root: AccessibilityNodeInfo?) {
         val normalizedPackage = packageName.orEmpty()
@@ -47,12 +63,8 @@ object ChatAccessibilityFallback {
             val node = queue.removeFirst()
             visited += 1
 
-            if (node.isEditable || node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) {
-                editable = true
-            }
-            if (isSendControl(node)) {
-                sendButton = true
-            }
+            if (isEditableInput(node)) editable = true
+            if (isSendControl(node)) sendButton = true
 
             for (index in 0 until node.childCount) {
                 node.getChild(index)?.let(queue::addLast)
@@ -67,9 +79,38 @@ object ChatAccessibilityFallback {
         )
     }
 
+    fun fillEditableInput(root: AccessibilityNodeInfo?, text: String): Boolean {
+        val normalizedText = text.trim()
+        if (root == null || normalizedText.isEmpty()) return false
+
+        var visited = 0
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        while (queue.isNotEmpty() && visited < MAX_VISITED_NODES) {
+            val node = queue.removeFirst()
+            visited += 1
+            if (isEditableInput(node)) {
+                val args = android.os.Bundle().apply {
+                    putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        normalizedText,
+                    )
+                }
+                if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::addLast)
+            }
+        }
+        return false
+    }
+
     fun clear() {
         mutableSnapshot.value = Snapshot()
     }
+
+    private fun isEditableInput(node: AccessibilityNodeInfo): Boolean =
+        node.isEditable || node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
 
     private fun isSendControl(node: AccessibilityNodeInfo): Boolean {
         if (!node.isClickable) return false
