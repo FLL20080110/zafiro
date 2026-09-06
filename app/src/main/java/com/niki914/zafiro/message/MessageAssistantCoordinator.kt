@@ -45,15 +45,12 @@ object MessageAssistantCoordinator {
 
     private val mutableLatestSuggestion = MutableStateFlow<Suggestion?>(null)
     val latestSuggestion: StateFlow<Suggestion?> = mutableLatestSuggestion.asStateFlow()
-
     private val lastAutoReplyAtByConversation = ConcurrentHashMap<String, Long>()
     private val pendingSuggestions = ConcurrentHashMap<String, PendingSuggestion>()
 
     fun start(scope: CoroutineScope, context: Context) {
         val appContext = context.applicationContext
-        scope.launch {
-            IncomingMessageBus.events.collectLatest { message -> handle(appContext, message) }
-        }
+        scope.launch { IncomingMessageBus.events.collectLatest { message -> handle(appContext, message) } }
     }
 
     fun clearTransientState() {
@@ -66,13 +63,11 @@ object MessageAssistantCoordinator {
         pruneSuggestions()
         val pending = pendingSuggestions.remove(suggestionId)
             ?: return Result.failure(IllegalStateException("Suggestion unavailable or expired"))
-
         val result = if (pending.message.systemReplyAvailable) {
             IncomingMessageReplyRegistry.sendApproved(pending.message, pending.text)
         } else {
             fillSuggestion(pending)
         }
-
         if (result.isSuccess) {
             val usedRemoteInput = pending.message.systemReplyAvailable
             SecurityAuditLog.record(
@@ -105,15 +100,14 @@ object MessageAssistantCoordinator {
 
     private suspend fun fillSuggestion(pending: PendingSuggestion): Result<Unit> {
         val policy = MessageAssistantSettings.snapshot()
+        if (!policy.accessibilityFallbackEnabled) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: compatibility mode disabled"))
+        }
         if (policy.mode == MessageAssistantSettings.Mode.OFF || pending.message.packageName !in policy.enabledPackages) {
             return Result.failure(IllegalStateException("Accessibility fill blocked: assistant disabled"))
         }
-        if (policy.privacyModeEnabled) {
-            return Result.failure(IllegalStateException("Accessibility fill blocked: privacy mode"))
-        }
-        if (pending.message.sensitive) {
-            return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive message"))
-        }
+        if (policy.privacyModeEnabled) return Result.failure(IllegalStateException("Accessibility fill blocked: privacy mode"))
+        if (pending.message.sensitive) return Result.failure(IllegalStateException("Accessibility fill blocked: sensitive message"))
         val current = ChatAccessibilityFallback.snapshot.value
         if (current.packageName != pending.message.packageName ||
             !current.readyForManualFallback ||
@@ -134,11 +128,12 @@ object MessageAssistantCoordinator {
     }
 
     private suspend fun handle(context: Context, message: IncomingChatMessage) {
-        val initialDecision = runCatching { MessageAssistantSettings.evaluate(message) }
+        val initialPolicy = runCatching { MessageAssistantSettings.snapshot() }
             .getOrElse {
-                Logger.w(LOG_TAG, "policy evaluation failed ${it.message}")
+                Logger.w(LOG_TAG, "policy load failed ${it.message}")
                 return
             }
+        val initialDecision = MessageAssistantSettings.decide(initialPolicy, message)
         if (initialDecision != MessageAssistantSettings.Decision.SUGGEST_ONLY &&
             initialDecision != MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED
         ) {
@@ -148,11 +143,10 @@ object MessageAssistantCoordinator {
 
         val generated = runCatching {
             EphemeralLlmClient.generateText(query = buildQuery(message), systemPrompt = SYSTEM_PROMPT)
-        }.map(::sanitizeGeneratedReply)
-            .getOrElse {
-                Logger.w(LOG_TAG, "reply generation failed ${it.message}")
-                return
-            }
+        }.map(::sanitizeGeneratedReply).getOrElse {
+            Logger.w(LOG_TAG, "reply generation failed ${it.message}")
+            return
+        }
         if (generated.isBlank()) return
 
         var autoSent = false
@@ -187,10 +181,9 @@ object MessageAssistantCoordinator {
         val suggestionId = UUID.randomUUID().toString()
         val manualSendAvailable = !autoSent && message.systemReplyAvailable
         val fallback = ChatAccessibilityFallback.snapshot.value
-        val accessibilityFillAvailable = !autoSent &&
-            !message.systemReplyAvailable &&
-            fallback.packageName == message.packageName &&
-            fallback.readyForManualFallback
+        val accessibilityFillAvailable = initialPolicy.accessibilityFallbackEnabled &&
+            !autoSent && !message.systemReplyAvailable &&
+            fallback.packageName == message.packageName && fallback.readyForManualFallback
         if (manualSendAvailable || accessibilityFillAvailable) {
             pendingSuggestions[suggestionId] = PendingSuggestion(
                 message = message,
