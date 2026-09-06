@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="security_audit_title">安全审计</string>
+    <string name="security_audit_summary">查看本地安全决策与阻断记录</string>
+    <string name="security_audit_description">安全事件仅保存在本机应用私有目录，不会上传或进入系统云备份；最多保留 200 条。命令仅保留 SHA-256 指纹，不保留命令正文。</string>
+    <string name="security_audit_empty">暂无安全审计记录。</string>
+    <string name="security_audit_clear">清空记录</string>
+    <string name="security_audit_event_tool">工具：%1$s</string>
+    <string name="security_audit_event_rule">规则：%1$s</string>
+    <string name="security_audit_event_policy">策略：%1$s</string>
+    <string name="security_audit_event_reason">原因：%1$s</string>
+    <string name="security_audit_event_command">命令 SHA-256：%1$s</string>
+    <string name="security_audit_risk">风险：%1$s</string>
+    <string name="security_audit_risk_info">信息</string>
+    <string name="security_audit_risk_low">低</string>
+    <string name="security_audit_risk_medium">中</string>
+    <string name="security_audit_risk_high">高</string>
+    <string name="security_audit_risk_critical">严重</string>
+    <string name="security_audit_kind_permission_requested">请求确认</string>
+    <string name="security_audit_kind_permission_allowed">已允许</string>
+    <string name="security_audit_kind_permission_denied">已拒绝</string>
+    <string name="security_audit_kind_permission_unavailable">无确认通道，已拒绝</string>
+    <string name="security_audit_kind_temporary_grant_created">已创建临时授权</string>
+    <string name="security_audit_kind_temporary_grant_used">已使用临时授权</string>
+    <string name="security_audit_kind_policy_blocked">已阻断</string>
+    <string name="security_audit_kind_privacy_blocked">隐私模式已阻断</string>
+    <string name="security_audit_kind_sensitive_context_blocked">敏感上下文已阻断</string>
+    <string name="security_audit_kind_temporary_grants_cleared">已清除临时授权</string>
+    <string name="security_audit_kind_sensitive_app_policy_enabled">已开启敏感应用保护</string>
+    <string name="security_audit_kind_sensitive_app_policy_disabled">已关闭敏感应用保护</string>
+    <string name="security_audit_kind_message_reply_sent">消息助手已回复</string>
+    <string name="security_audit_kind_message_reply_blocked">消息助手已阻断</string>
+</resources>

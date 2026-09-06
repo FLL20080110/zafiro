@@ -8,6 +8,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 
 /** 一次工具执行确认请求（UI 展示字段）。 */
 data class ToolPermissionRequest(
@@ -15,6 +17,23 @@ data class ToolPermissionRequest(
     val toolName: String,
     val command: String,
     val matchedRuleName: String,
+    /** 风险详情仅供确认 UI 使用；持久审计不复制该自由文本。 */
+    val riskLevel: SecurityRiskLevel = SecurityRiskLevel.HIGH,
+    val riskReason: String? = null,
+    /**
+     * 本地确定性生成的命令作用说明。仅描述命令类别与影响，不复制路径、包名、
+     * URL、token、密码等参数，也不会调用模型或网络服务。
+     */
+    val commandExplanation: String = ShellCommandExplainer.explain(command),
+    /**
+     * 本地确定性生成的最坏影响说明。只展示类别级后果，不复述命令参数。
+     */
+    val worstCaseImpact: String = ShellCommandExplainer.worstCaseImpact(command),
+    /**
+     * 大于 0 时 UI 可以提供“临时允许”。授权范围严格绑定当前
+     * toolName + matchedRuleName + command，且只保存在当前进程内存中。
+     */
+    val temporaryGrantMillis: Long? = null,
 )
 
 /** 确认请求终态：允许 / 用户拒绝 / 无确认渠道（宿主路径）拒绝。 */
@@ -25,11 +44,26 @@ enum class ToolPermissionResponse { ALLOWED, DENIED_BY_USER, DENIED_UNAVAILABLE 
  * - LLMController.stream 按来源设置 [canRequestUserConfirmation]：
  *   UI 直连 = true；宿主 Binder = false（默认拒绝，Agent 收到英文错误）。
  * - UI collect [pendingConfirmation] 渲染对话框，[respond] 解除挂起；
- *   永不超时（用户明确决策，PRD §3）。
+ * - 临时授权仅存在内存，按精确请求作用域缓存，到期或进程退出即失效；
+ * - 所有确认终态都写入本地有界 [SecurityAuditLog]，不上传；
  * - LLMController 单活跃回合，confirm/respond 无并发竞争。
  */
 object ToolPermissionCoordinator {
     private const val LOG_TAG = "niki914_nexus_ToolPermission"
+    private const val USER_EXECUTION_RULE_AUDIT_NAME = "User execution rule"
+    internal const val MAX_TEMPORARY_GRANT_MILLIS = 24L * 60L * 60L * 1000L
+
+    private val SAFE_AUDIT_RULE_NAMES = setOf(
+        "Sensitive: file mutation",
+        "Sensitive: app/package management",
+        "Sensitive: system settings",
+        "Sensitive: process/device control",
+        "Sensitive: privilege escalation",
+        "Sensitive: network transfer",
+        "Sensitive: network policy",
+        "Privileged identity: root",
+        "Privileged identity: shizuku",
+    )
 
     @Volatile
     var canRequestUserConfirmation: Boolean = false
@@ -40,18 +74,66 @@ object ToolPermissionCoordinator {
     val pendingConfirmation: StateFlow<ToolPermissionRequest?> = pendingFlow.asStateFlow()
 
     private var deferred: CompletableDeferred<ToolPermissionResponse>? = null
+    private val temporaryGrantLock = Any()
+    private val temporaryGrantExpiryNanos = mutableMapOf<String, Long>()
 
     suspend fun confirm(request: ToolPermissionRequest): ToolPermissionResponse {
+        // 宿主/Binder 路径继续 fail-closed，不能借用 UI 会话里曾经批准的临时授权。
         if (!canRequestUserConfirmation) {
             Logger.i(LOG_TAG, "confirm denied source=host id=${request.id}")
+            audit(
+                request = request,
+                kind = SecurityAuditKind.PERMISSION_UNAVAILABLE,
+                policyCode = "CONFIRM_UNAVAILABLE",
+                reason = "No interactive confirmation channel is available.",
+            )
             return ToolPermissionResponse.DENIED_UNAVAILABLE
         }
+
+        if (hasActiveTemporaryGrant(request)) {
+            Logger.i(LOG_TAG, "confirm temporary grant hit id=${request.id} tool=${request.toolName}")
+            audit(
+                request = request,
+                kind = SecurityAuditKind.TEMPORARY_GRANT_USED,
+                policyCode = "TEMPORARY_GRANT_HIT",
+                reason = "A matching unexpired temporary grant was used.",
+            )
+            return ToolPermissionResponse.ALLOWED
+        }
+
         Logger.i(LOG_TAG, "confirm requested id=${request.id} tool=${request.toolName}")
+        audit(
+            request = request,
+            kind = SecurityAuditKind.PERMISSION_REQUESTED,
+            policyCode = "CONFIRM_REQUESTED",
+            reason = "Explicit user confirmation required.",
+        )
         pendingFlow.value = request
         val waiter = CompletableDeferred<ToolPermissionResponse>()
         deferred = waiter
         try {
-            return waiter.await()
+            val response = waiter.await()
+            when (response) {
+                ToolPermissionResponse.ALLOWED -> audit(
+                    request = request,
+                    kind = SecurityAuditKind.PERMISSION_ALLOWED,
+                    policyCode = "CONFIRM_ALLOWED",
+                    reason = "The user allowed this operation.",
+                )
+                ToolPermissionResponse.DENIED_BY_USER -> audit(
+                    request = request,
+                    kind = SecurityAuditKind.PERMISSION_DENIED,
+                    policyCode = "CONFIRM_DENIED",
+                    reason = "The user denied this operation.",
+                )
+                ToolPermissionResponse.DENIED_UNAVAILABLE -> audit(
+                    request = request,
+                    kind = SecurityAuditKind.PERMISSION_UNAVAILABLE,
+                    policyCode = "CONFIRM_UNAVAILABLE",
+                    reason = "Confirmation became unavailable.",
+                )
+            }
+            return response
         } finally {
             if (deferred === waiter) {
                 deferred = null
@@ -65,6 +147,112 @@ object ToolPermissionCoordinator {
         if (pendingFlow.value?.id != requestId) return
         deferred?.complete(
             if (allowed) ToolPermissionResponse.ALLOWED else ToolPermissionResponse.DENIED_BY_USER
+        )
+    }
+
+    /**
+     * 临时允许当前精确请求。只有请求方显式声明 [ToolPermissionRequest.temporaryGrantMillis]
+     * 时才生效；缓存键为 SHA-256，不保存第二份原始命令文本。
+     * TTL 会被限制在 24 小时以内，避免异常配置形成超长授权或纳秒截止时间溢出。
+     */
+    fun respondTemporary(requestId: String) {
+        val request = pendingFlow.value ?: return
+        if (request.id != requestId) return
+        val ttlMillis = normalizedTemporaryGrantMillis(request.temporaryGrantMillis) ?: return
+        val key = temporaryGrantScopeKey(request)
+        val expiresAt = saturatedExpiryNanos(System.nanoTime(), ttlMillis)
+        synchronized(temporaryGrantLock) {
+            temporaryGrantExpiryNanos[key] = expiresAt
+        }
+        Logger.i(LOG_TAG, "temporary grant stored id=${request.id} tool=${request.toolName} ttlMs=$ttlMillis")
+        audit(
+            request = request,
+            kind = SecurityAuditKind.TEMPORARY_GRANT_CREATED,
+            policyCode = "TEMPORARY_GRANT_CREATED",
+            reason = "Temporary grant created for ${ttlMillis}ms with exact request scope.",
+        )
+        deferred?.complete(ToolPermissionResponse.ALLOWED)
+    }
+
+    /** 供急停、隐私模式或未来账号切换时主动清空临时授权。 */
+    fun clearTemporaryGrants() {
+        val clearedCount = synchronized(temporaryGrantLock) {
+            val count = temporaryGrantExpiryNanos.size
+            temporaryGrantExpiryNanos.clear()
+            count
+        }
+        Logger.i(LOG_TAG, "temporary grants cleared")
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.TEMPORARY_GRANTS_CLEARED,
+            riskLevel = SecurityRiskLevel.INFO,
+            policyCode = "TEMPORARY_GRANTS_CLEARED",
+            reason = "Cleared $clearedCount temporary grant(s).",
+        )
+    }
+
+    private fun hasActiveTemporaryGrant(request: ToolPermissionRequest): Boolean {
+        if (normalizedTemporaryGrantMillis(request.temporaryGrantMillis) == null) return false
+        val key = temporaryGrantScopeKey(request)
+        val now = System.nanoTime()
+        return synchronized(temporaryGrantLock) {
+            val expiresAt = temporaryGrantExpiryNanos[key] ?: return@synchronized false
+            if (expiresAt <= now) {
+                temporaryGrantExpiryNanos.remove(key)
+                false
+            } else {
+                true
+            }
+        }
+    }
+
+    internal fun normalizedTemporaryGrantMillis(value: Long?): Long? {
+        val positive = value?.takeIf { it > 0L } ?: return null
+        return positive.coerceAtMost(MAX_TEMPORARY_GRANT_MILLIS)
+    }
+
+    internal fun saturatedExpiryNanos(nowNanos: Long, ttlMillis: Long): Long {
+        val ttlNanos = TimeUnit.MILLISECONDS.toNanos(ttlMillis)
+        if (ttlNanos <= 0L) return nowNanos
+        return if (nowNanos > Long.MAX_VALUE - ttlNanos) Long.MAX_VALUE else nowNanos + ttlNanos
+    }
+
+    private fun temporaryGrantScopeKey(request: ToolPermissionRequest): String {
+        val rawScope = buildString {
+            append(request.toolName)
+            append('\u0000')
+            append(request.matchedRuleName)
+            append('\u0000')
+            append(request.command)
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(rawScope.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    /**
+     * Audit persistence must never inherit user-controlled execution-rule names. Built-in
+     * confirmation names and privileged identities are fixed application constants; every
+     * other rule name is collapsed to a stable category while the full name remains UI-only.
+     */
+    private fun minimizedAuditRuleName(request: ToolPermissionRequest): String? {
+        val ruleName = request.matchedRuleName.trim().takeIf(String::isNotEmpty) ?: return null
+        return if (ruleName in SAFE_AUDIT_RULE_NAMES) ruleName else USER_EXECUTION_RULE_AUDIT_NAME
+    }
+
+    private fun audit(
+        request: ToolPermissionRequest,
+        kind: SecurityAuditKind,
+        policyCode: String,
+        reason: String,
+    ) {
+        SecurityAuditLog.record(
+            kind = kind,
+            riskLevel = request.riskLevel,
+            toolName = request.toolName,
+            ruleName = minimizedAuditRuleName(request),
+            policyCode = policyCode,
+            reason = reason,
+            command = request.command,
         )
     }
 }

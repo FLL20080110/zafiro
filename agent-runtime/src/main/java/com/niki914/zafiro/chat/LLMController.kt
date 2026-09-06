@@ -31,10 +31,15 @@ import com.niki914.zafiro.chat.agentic.PromptComposer
 import com.niki914.zafiro.chat.agentic.PromptComposerInput
 import com.niki914.zafiro.chat.agentic.ToolManager
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
+import com.niki914.zafiro.settings.RuntimeCapabilityRegistry
 import com.niki914.zafiro.settings.RuntimeEnvironment
 import com.niki914.zafiro.settings.model.LlmProtocol
 import kotlinx.coroutines.CancellationException
@@ -243,6 +248,7 @@ object LLMController {
         val prompt = promptComposer.compose(
             PromptComposerInput(
                 additionalInstructions = llmConfig.prompt,
+                runtimeCapabilityContext = RuntimeCapabilityRegistry.promptFragment(),
                 memoryItems = buildMemoryItems(llmConfig),
                 tools = resolvedTools,
                 enabledSkills = enabledSkills,
@@ -330,6 +336,25 @@ object LLMController {
         query: String,
         fromUserInterface: Boolean = false,
     ): Flow<LlmStreamEvent> = channelFlow {
+        // Turn-level sensitive-page gate. Evaluate locally before refresh() so
+        // neither the user query nor any runtime prompt/context can reach a cloud
+        // model while a password, OTP, or payment page is in the foreground.
+        // Leaving the page automatically restores the next turn; no page text is
+        // retained and no background polling is required.
+        val sensitivePage = SensitivePageGuard.evaluateCurrent()
+        if (sensitivePage.blocked) {
+            Logger.w(LOG_TAG, "round blocked by sensitive page kind=${sensitivePage.kind} reason=${sensitivePage.reasonCode}")
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+                riskLevel = SecurityRiskLevel.HIGH,
+                toolName = "llm_turn",
+                policyCode = sensitivePage.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+                reason = "Sensitive context blocked before LLM turn execution.",
+            )
+            send(LlmStreamEvent.Error(message = SensitivePageGuard.blockedMessage(sensitivePage), code = null))
+            return@channelFlow
+        }
+
         // 确认型执行规则按来源区分：UI 直连可弹窗；宿主路径默认拒绝（英文错误回给 Agent）
         ToolPermissionCoordinator.canRequestUserConfirmation = fromUserInterface
         try {

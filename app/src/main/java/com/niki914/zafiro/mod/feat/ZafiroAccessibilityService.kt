@@ -2,6 +2,7 @@ package com.niki914.zafiro.mod.feat
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.Notification
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
@@ -9,12 +10,25 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.niki914.zafiro.app.overlay.PointerOverlay
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.IAccessibility
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
+import com.niki914.zafiro.message.ChatAccessibilityFallback
 
 class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         AccessibilityController.setService(this)
+        SensitivePageGuard.installRootProvider { rootInActiveWindow }
+        SensitivePageGuard.installWindowRootsProvider {
+            windows.mapNotNull { window -> window.root }
+        }
+        ChatAccessibilityFallback.installFillHandler { expectedPackage, text ->
+            val root = rootInActiveWindow ?: return@installFillHandler false
+            if (root.packageName?.toString() != expectedPackage) {
+                return@installFillHandler false
+            }
+            ChatAccessibilityFallback.fillEditableInput(root, text)
+        }
         AccessibilityController.clearPointerOverlay()
         val overlay = PointerOverlay()
         overlay.init(this)
@@ -23,13 +37,45 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val type = event?.eventType ?: return
+
+        if (type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            val notification = event.parcelableData as? Notification
+            val parts = buildList<CharSequence?> {
+                addAll(event.text)
+                if (notification != null) {
+                    val extras = notification.extras
+                    add(extras.getCharSequence(Notification.EXTRA_TITLE))
+                    add(extras.getCharSequence(Notification.EXTRA_TEXT))
+                    add(extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+                    add(extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+                    extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                        ?.forEach { line -> add(line) }
+                }
+            }
+            SensitivePageGuard.recordNotificationText(parts)
+        }
+
         if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
             || type == AccessibilityEvent.TYPE_VIEW_SCROLLED
             || type == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+            || type == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED
         ) {
             AccessibilityController.recordUiEvent()
+        }
+
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            || type == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            || type == AccessibilityEvent.TYPE_VIEW_SCROLLED
+        ) {
+            ChatAccessibilityFallback.update(
+                packageName = event.packageName?.toString(),
+                root = rootInActiveWindow,
+                conversationBoundary = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                    type == AccessibilityEvent.TYPE_WINDOWS_CHANGED,
+            )
         }
     }
 
@@ -38,6 +84,9 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
     }
 
     override fun onDestroy() {
+        ChatAccessibilityFallback.clearFillHandler()
+        ChatAccessibilityFallback.clear()
+        SensitivePageGuard.clearRootProvider()
         AccessibilityController.clearPointerOverlay()
         AccessibilityController.clearService()
         super.onDestroy()

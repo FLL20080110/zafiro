@@ -9,6 +9,7 @@ data class PromptComposeResult(
 
 data class PromptComposerInput(
     val additionalInstructions: String,
+    val runtimeCapabilityContext: String = "",
     val memoryItems: List<String> = emptyList(),
     val tools: ResolvedTools = ResolvedTools(),
     val enabledSkills: List<RuntimeSkillMetadata> = emptyList(),
@@ -31,6 +32,7 @@ class PromptComposer {
         val identity = input.additionalInstructions.trim().ifBlank { DEFAULT_AGENT_IDENTITY }
         return listOfNotNull(
             identity,
+            input.runtimeCapabilityContext.trim().takeIf(String::isNotBlank),
             renderToolContext(input.tools),
             renderSkillContext(input.enabledSkills)
                 .takeIf { hasBuiltinTool(input, "load_skill") },

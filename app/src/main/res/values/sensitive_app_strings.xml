@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sensitive_apps_title">敏感应用</string>
+    <string name="sensitive_apps_summary">指定进入后自动暂停 AI 的应用</string>
+    <string name="sensitive_apps_description">开启后，进入对应应用时会在本地暂停 AI 屏幕读取与自动操作。应用列表和策略仅保存在本机，不发送给模型。</string>
+    <string name="sensitive_apps_empty">未找到可启动应用</string>
+    <string name="sensitive_apps_loading">正在读取已安装应用…</string>
+</resources>

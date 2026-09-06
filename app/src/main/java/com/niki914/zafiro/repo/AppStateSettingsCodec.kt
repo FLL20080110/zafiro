@@ -25,6 +25,18 @@ internal data class AppStateSettings(
     val llmIdleTimeoutSeconds: Long = 60L,
     /** 传输层自动重试次数。 */
     val llmRetryMaxAttempts: Int = 3,
+    /** 隐私模式：禁用云端 LLM、MCP 与记忆写入等外发/持久化能力。 */
+    val privacyModeEnabled: Boolean = false,
+    /** 用户标记为敏感应用的包名，逗号分隔；包名语法本身不含逗号。 */
+    val sensitiveAppPackagesCsv: String = "",
+    /** 消息助手模式：off / suggest / auto_reply。 */
+    val messageAssistantMode: String = "off",
+    /** 允许消息助手处理的应用包名，逗号分隔。 */
+    val messageAssistantPackagesCsv: String = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim",
+    /** 允许自动回复的可信会话键，换行分隔；建议回复模式不要求白名单。 */
+    val messageAssistantTrustedConversations: String = "",
+    /** 无 RemoteInput 时是否允许用户显式触发 Accessibility 填入；默认关闭。 */
+    val messageAssistantAccessibilityFallbackEnabled: Boolean = false,
 )
 
 internal object AppStateSettingsCodec {
@@ -36,14 +48,21 @@ internal object AppStateSettingsCodec {
             lastOpenedAgentId = root.string(LAST_OPENED_AGENT_ID_KEY).ifBlank { "main" },
             lastOpenedConversationId = root.string(LAST_OPENED_CONVERSATION_ID_KEY),
             languageTag = root.string(LANGUAGE_TAG_KEY),
-            loadLastConversationOnStartup = root.boolean(
-                LOAD_LAST_CONVERSATION_KEY,
-                default = true
-            ),
+            loadLastConversationOnStartup = root.boolean(LOAD_LAST_CONVERSATION_KEY, default = true),
             themeMode = root.string(THEME_MODE_KEY).ifBlank { "dark" },
             themeSeedColor = root.string(THEME_SEED_COLOR_KEY).ifBlank { "FF52DBC9" },
             llmIdleTimeoutSeconds = root.long(LLM_IDLE_TIMEOUT_KEY, default = 60L),
             llmRetryMaxAttempts = root.int(LLM_RETRY_ATTEMPTS_KEY, default = 3),
+            privacyModeEnabled = root.boolean(PRIVACY_MODE_ENABLED_KEY, default = false),
+            sensitiveAppPackagesCsv = root.string(SENSITIVE_APP_PACKAGES_KEY),
+            messageAssistantMode = root.string(MESSAGE_ASSISTANT_MODE_KEY).ifBlank { "off" },
+            messageAssistantPackagesCsv = root.string(MESSAGE_ASSISTANT_PACKAGES_KEY)
+                .ifBlank { DEFAULT_MESSAGE_ASSISTANT_PACKAGES },
+            messageAssistantTrustedConversations = root.string(MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY),
+            messageAssistantAccessibilityFallbackEnabled = root.boolean(
+                MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY,
+                default = false,
+            ),
         )
     }
 
@@ -60,6 +79,12 @@ internal object AppStateSettingsCodec {
                 THEME_SEED_COLOR_KEY to JsonPrimitive(state.themeSeedColor),
                 LLM_IDLE_TIMEOUT_KEY to JsonPrimitive(state.llmIdleTimeoutSeconds),
                 LLM_RETRY_ATTEMPTS_KEY to JsonPrimitive(state.llmRetryMaxAttempts),
+                PRIVACY_MODE_ENABLED_KEY to JsonPrimitive(state.privacyModeEnabled),
+                SENSITIVE_APP_PACKAGES_KEY to JsonPrimitive(state.sensitiveAppPackagesCsv),
+                MESSAGE_ASSISTANT_MODE_KEY to JsonPrimitive(state.messageAssistantMode),
+                MESSAGE_ASSISTANT_PACKAGES_KEY to JsonPrimitive(state.messageAssistantPackagesCsv),
+                MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY to JsonPrimitive(state.messageAssistantTrustedConversations),
+                MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY to JsonPrimitive(state.messageAssistantAccessibilityFallbackEnabled),
             )
         ).toString()
     }
@@ -74,4 +99,12 @@ internal object AppStateSettingsCodec {
     private const val THEME_SEED_COLOR_KEY = "theme_seed_color"
     private const val LLM_IDLE_TIMEOUT_KEY = "llm_idle_timeout_seconds"
     private const val LLM_RETRY_ATTEMPTS_KEY = "llm_retry_max_attempts"
+    private const val PRIVACY_MODE_ENABLED_KEY = "privacy_mode_enabled"
+    private const val SENSITIVE_APP_PACKAGES_KEY = "sensitive_app_packages"
+    private const val MESSAGE_ASSISTANT_MODE_KEY = "message_assistant_mode"
+    private const val MESSAGE_ASSISTANT_PACKAGES_KEY = "message_assistant_packages"
+    private const val MESSAGE_ASSISTANT_TRUSTED_CONVERSATIONS_KEY = "message_assistant_trusted_conversations"
+    private const val MESSAGE_ASSISTANT_ACCESSIBILITY_FALLBACK_ENABLED_KEY =
+        "message_assistant_accessibility_fallback_enabled"
+    private const val DEFAULT_MESSAGE_ASSISTANT_PACKAGES = "com.tencent.mm,com.tencent.mobileqq,com.tencent.tim"
 }
