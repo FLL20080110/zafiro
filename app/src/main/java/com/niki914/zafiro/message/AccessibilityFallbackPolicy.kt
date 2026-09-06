@@ -27,9 +27,24 @@ object AccessibilityFallbackPolicy {
         isEnabled: Boolean,
         isEditable: Boolean,
         supportsSetText: Boolean,
+        semanticLabel: String = "",
     ): Boolean {
-        return isVisibleToUser &&
-            isEnabled &&
-            (isEditable || supportsSetText)
+        if (!isVisibleToUser || !isEnabled || (!isEditable && !supportsSetText)) return false
+        return !looksLikeSearchField(semanticLabel)
     }
+
+    internal fun looksLikeSearchField(value: String): Boolean {
+        val normalized = value.trim().lowercase()
+        if (normalized.isEmpty()) return false
+        return SEARCH_MARKERS.any { marker -> marker in normalized }
+    }
+
+    private val SEARCH_MARKERS = setOf(
+        "搜索",
+        "查找",
+        "search",
+        "search_src_text",
+        "search_edit",
+        "search_input",
+    )
 }
