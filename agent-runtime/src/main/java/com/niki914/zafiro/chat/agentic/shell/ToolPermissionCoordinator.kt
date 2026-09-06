@@ -51,6 +51,7 @@ enum class ToolPermissionResponse { ALLOWED, DENIED_BY_USER, DENIED_UNAVAILABLE 
 object ToolPermissionCoordinator {
     private const val LOG_TAG = "niki914_nexus_ToolPermission"
     private const val USER_EXECUTION_RULE_AUDIT_NAME = "User execution rule"
+    internal const val MAX_TEMPORARY_GRANT_MILLIS = 24L * 60L * 60L * 1000L
 
     private val SAFE_AUDIT_RULE_NAMES = setOf(
         "Sensitive: file mutation",
@@ -152,13 +153,14 @@ object ToolPermissionCoordinator {
     /**
      * 临时允许当前精确请求。只有请求方显式声明 [ToolPermissionRequest.temporaryGrantMillis]
      * 时才生效；缓存键为 SHA-256，不保存第二份原始命令文本。
+     * TTL 会被限制在 24 小时以内，避免异常配置形成超长授权或纳秒截止时间溢出。
      */
     fun respondTemporary(requestId: String) {
         val request = pendingFlow.value ?: return
         if (request.id != requestId) return
-        val ttlMillis = request.temporaryGrantMillis?.takeIf { it > 0L } ?: return
+        val ttlMillis = normalizedTemporaryGrantMillis(request.temporaryGrantMillis) ?: return
         val key = temporaryGrantScopeKey(request)
-        val expiresAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ttlMillis)
+        val expiresAt = saturatedExpiryNanos(System.nanoTime(), ttlMillis)
         synchronized(temporaryGrantLock) {
             temporaryGrantExpiryNanos[key] = expiresAt
         }
@@ -189,7 +191,7 @@ object ToolPermissionCoordinator {
     }
 
     private fun hasActiveTemporaryGrant(request: ToolPermissionRequest): Boolean {
-        if ((request.temporaryGrantMillis ?: 0L) <= 0L) return false
+        if (normalizedTemporaryGrantMillis(request.temporaryGrantMillis) == null) return false
         val key = temporaryGrantScopeKey(request)
         val now = System.nanoTime()
         return synchronized(temporaryGrantLock) {
@@ -201,6 +203,17 @@ object ToolPermissionCoordinator {
                 true
             }
         }
+    }
+
+    internal fun normalizedTemporaryGrantMillis(value: Long?): Long? {
+        val positive = value?.takeIf { it > 0L } ?: return null
+        return positive.coerceAtMost(MAX_TEMPORARY_GRANT_MILLIS)
+    }
+
+    internal fun saturatedExpiryNanos(nowNanos: Long, ttlMillis: Long): Long {
+        val ttlNanos = TimeUnit.MILLISECONDS.toNanos(ttlMillis)
+        if (ttlNanos <= 0L) return nowNanos
+        return if (nowNanos > Long.MAX_VALUE - ttlNanos) Long.MAX_VALUE else nowNanos + ttlNanos
     }
 
     private fun temporaryGrantScopeKey(request: ToolPermissionRequest): String {
