@@ -48,7 +48,7 @@ data class SecurityAuditEvent(
  */
 object SecurityAuditLog {
     const val MAX_EVENTS = 200
-    private const val MAX_REASON_CHARS = 160
+    internal const val MAX_TEXT_CHARS = 160
 
     private val idCounter = AtomicLong(0L)
     private val lock = Any()
@@ -71,10 +71,10 @@ object SecurityAuditLog {
             timestampMs = System.currentTimeMillis(),
             kind = kind,
             riskLevel = riskLevel,
-            toolName = toolName?.takeIf(String::isNotBlank),
-            ruleName = ruleName?.takeIf(String::isNotBlank),
-            policyCode = policyCode?.takeIf(String::isNotBlank),
-            reason = reason?.takeIf(String::isNotBlank)?.take(MAX_REASON_CHARS),
+            toolName = minimizedText(toolName),
+            ruleName = minimizedText(ruleName),
+            policyCode = minimizedText(policyCode),
+            reason = minimizedText(reason),
             commandHashSha256 = normalizedCommand?.let(::sha256),
         )
         synchronized(lock) {
@@ -116,6 +116,7 @@ object SecurityAuditLog {
         synchronized(lock) {
             val current = eventFlow.value
             val merged = (events + current)
+                .map(::minimizeEvent)
                 .sortedWith(compareBy<SecurityAuditEvent> { it.timestampMs }.thenBy { it.id })
                 .takeLast(MAX_EVENTS)
             eventFlow.value = merged
@@ -129,6 +130,19 @@ object SecurityAuditLog {
             eventFlow.value = emptyList()
         }
     }
+
+    private fun minimizeEvent(event: SecurityAuditEvent): SecurityAuditEvent = event.copy(
+        toolName = minimizedText(event.toolName),
+        ruleName = minimizedText(event.ruleName),
+        policyCode = minimizedText(event.policyCode),
+        reason = minimizedText(event.reason),
+        commandHashSha256 = event.commandHashSha256
+            ?.lowercase()
+            ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) },
+    )
+
+    private fun minimizedText(value: String?): String? =
+        value?.trim()?.takeIf(String::isNotEmpty)?.take(MAX_TEXT_CHARS)
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256")
