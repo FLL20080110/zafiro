@@ -67,12 +67,11 @@ object SecurityAuditPersistence {
     private fun writeSnapshot(file: AtomicFile, events: List<SecurityAuditEvent>) {
         val array = JSONArray()
         events.forEach { event -> array.put(encodeEvent(event)) }
+        val bytes = array.toString().toByteArray(Charsets.UTF_8)
         val stream = file.startWrite()
         try {
-            stream.writer(Charsets.UTF_8).use { writer ->
-                writer.write(array.toString())
-                writer.flush()
-            }
+            stream.write(bytes)
+            stream.flush()
             file.finishWrite(stream)
         } catch (throwable: Throwable) {
             file.failWrite(stream)
