@@ -59,6 +59,25 @@ object MessageAssistantCoordinator {
         pendingSuggestions.clear()
     }
 
+    fun invalidateAccessibilitySuggestions(context: Context) {
+        val appContext = context.applicationContext
+        val removed = pendingSuggestions.entries
+            .filter { !it.value.message.systemReplyAvailable }
+            .map { it.key to it.value }
+        removed.forEach { (id, pending) ->
+            if (pendingSuggestions.remove(id, pending)) {
+                MessageAssistantSuggestionNotifier.dismiss(
+                    appContext,
+                    pending.message.packageName,
+                    pending.message.conversation,
+                )
+            }
+        }
+        if (mutableLatestSuggestion.value?.accessibilityFillAvailable == true) {
+            mutableLatestSuggestion.value = null
+        }
+    }
+
     suspend fun useSuggestion(context: Context, suggestionId: String): Result<Unit> {
         pruneSuggestions()
         val pending = pendingSuggestions.remove(suggestionId)
