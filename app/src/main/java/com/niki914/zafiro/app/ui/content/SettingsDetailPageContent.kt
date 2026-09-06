@@ -109,6 +109,11 @@ fun SettingsDetailPageContent(
         return
     }
 
+    if (group == ZafiroSettingsGroup.SecurityAudit) {
+        SecurityAuditSettingsContent()
+        return
+    }
+
     TODOPageContent()
     return
 }
