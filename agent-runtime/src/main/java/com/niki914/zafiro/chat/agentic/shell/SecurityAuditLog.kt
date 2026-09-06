@@ -33,15 +33,16 @@ data class SecurityAuditEvent(
 )
 
 /**
- * Process-local security audit trail.
+ * Bounded local security audit trail.
  *
- * The log is intentionally bounded and local. It never uploads events and never stores a
- * second full copy of a shell command: only a SHA-256 digest plus a short, redacted preview
- * are retained. A future persistent audit repository can subscribe to [events] without
- * changing the security decision path.
+ * Recording remains in-memory and synchronous so security decisions never wait for disk I/O.
+ * The Android app layer may restore a minimized persisted snapshot through [restorePersisted]
+ * and subscribe to [events] for asynchronous app-private persistence. No upload path exists
+ * here, and no second full copy of a shell command is retained: only SHA-256 plus a short,
+ * redacted preview.
  */
 object SecurityAuditLog {
-    private const val MAX_EVENTS = 200
+    const val MAX_EVENTS = 200
     private const val MAX_PREVIEW_CHARS = 160
 
     private val idCounter = AtomicLong(0L)
@@ -74,6 +75,22 @@ object SecurityAuditLog {
         )
         synchronized(lock) {
             eventFlow.value = (eventFlow.value + event).takeLast(MAX_EVENTS)
+        }
+    }
+
+    /**
+     * Restores an already-minimized local snapshot. The caller owns decoding/validation.
+     * Any events recorded during startup are merged instead of being overwritten.
+     */
+    fun restorePersisted(events: List<SecurityAuditEvent>) {
+        synchronized(lock) {
+            val current = eventFlow.value
+            val merged = (events + current)
+                .sortedWith(compareBy<SecurityAuditEvent> { it.timestampMs }.thenBy { it.id })
+                .takeLast(MAX_EVENTS)
+            eventFlow.value = merged
+            val maxId = merged.maxOfOrNull(SecurityAuditEvent::id) ?: 0L
+            idCounter.updateAndGet { existing -> maxOf(existing, maxId) }
         }
     }
 
