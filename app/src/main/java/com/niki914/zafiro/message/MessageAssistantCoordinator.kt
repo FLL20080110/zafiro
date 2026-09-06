@@ -23,6 +23,7 @@ object MessageAssistantCoordinator {
     private const val LOG_TAG = "niki914_nexus_MessageAssistantCoordinator"
     private const val AUTO_REPLY_COOLDOWN_MS = 30_000L
     private const val SUGGESTION_TTL_MS = 5 * 60 * 1000L
+    private const val ACCESSIBILITY_SUGGESTION_TTL_MS = 30_000L
     private const val MAX_REPLY_CHARS = 500
 
     data class Suggestion(
@@ -119,6 +120,15 @@ object MessageAssistantCoordinator {
     }
 
     private suspend fun fillSuggestion(pending: PendingSuggestion): Result<Unit> {
+        if (isPendingSuggestionExpired(
+                createdAtElapsedMs = pending.createdAtElapsedMs,
+                systemReplyAvailable = false,
+                nowElapsedMs = SystemClock.elapsedRealtime(),
+            )
+        ) {
+            return Result.failure(IllegalStateException("Accessibility fill blocked: suggestion expired"))
+        }
+
         val policy = MessageAssistantSettings.snapshot()
         if (!policy.accessibilityFallbackEnabled) {
             return Result.failure(IllegalStateException("Accessibility fill blocked: compatibility mode disabled"))
@@ -258,7 +268,23 @@ object MessageAssistantCoordinator {
 
     private fun pruneSuggestions() {
         val now = SystemClock.elapsedRealtime()
-        pendingSuggestions.entries.removeIf { now - it.value.createdAtElapsedMs > SUGGESTION_TTL_MS }
+        pendingSuggestions.entries.removeIf { entry ->
+            isPendingSuggestionExpired(
+                createdAtElapsedMs = entry.value.createdAtElapsedMs,
+                systemReplyAvailable = entry.value.message.systemReplyAvailable,
+                nowElapsedMs = now,
+            )
+        }
+    }
+
+    internal fun isPendingSuggestionExpired(
+        createdAtElapsedMs: Long,
+        systemReplyAvailable: Boolean,
+        nowElapsedMs: Long,
+    ): Boolean {
+        if (nowElapsedMs < createdAtElapsedMs) return true
+        val ttl = if (systemReplyAvailable) SUGGESTION_TTL_MS else ACCESSIBILITY_SUGGESTION_TTL_MS
+        return nowElapsedMs - createdAtElapsedMs > ttl
     }
 
     internal fun sanitizeGeneratedReply(value: String): String = value.trim().take(MAX_REPLY_CHARS)
