@@ -4,6 +4,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,13 +21,14 @@ import com.niki914.uikit.infra.component.settings.SettingsSectionLayout
 import com.niki914.uikit.infra.component.settings.SettingsSectionSpec
 import com.niki914.uikit.infra.component.settings.SettingsSpecPageContent
 import com.niki914.zafiro.app.R
+import com.niki914.zafiro.message.RecentConversationRegistry
 import com.niki914.zafiro.repo.MessageAssistantSettings
 import kotlinx.coroutines.launch
 
 private const val MODE_ROW_ID = "message-assistant.mode"
 private const val NOTIFICATION_ACCESS_ROW_ID = "message-assistant.notification-access"
-private const val TRUSTED_ROW_ID = "message-assistant.trusted"
 private const val PACKAGE_ROW_PREFIX = "message-assistant.package:"
+private const val TRUSTED_ROW_PREFIX = "message-assistant.trusted:"
 private const val LOG_TAG = "niki914_nexus_MessageAssistant"
 
 private val CHAT_PACKAGES = listOf(
@@ -42,6 +44,7 @@ fun MessageAssistantSettingsContent() {
     var snapshot by remember { mutableStateOf<MessageAssistantSettings.Snapshot?>(null) }
     var showModeDialog by remember { mutableStateOf(false) }
     var notificationAccess by remember { mutableStateOf(false) }
+    val recentConversations by RecentConversationRegistry.entries.collectAsState()
 
     fun refreshNotificationAccess() {
         notificationAccess = NotificationManagerCompat
@@ -61,6 +64,25 @@ fun MessageAssistantSettingsContent() {
         MessageAssistantSettings.Mode.OFF -> stringResource(R.string.message_assistant_mode_off)
         MessageAssistantSettings.Mode.SUGGEST -> stringResource(R.string.message_assistant_mode_suggest)
         MessageAssistantSettings.Mode.AUTO_REPLY -> stringResource(R.string.message_assistant_mode_auto)
+    }
+
+    val trustedRows = if (recentConversations.isEmpty()) {
+        listOf(
+            SettingsRowSpec.Message(
+                title = stringResource(R.string.message_assistant_recent_empty),
+            )
+        )
+    } else {
+        recentConversations.map { entry ->
+            val appLabel = CHAT_PACKAGES.firstOrNull { it.first == entry.packageName }?.second
+                ?: entry.packageName
+            SettingsRowSpec.Toggle(
+                id = TRUSTED_ROW_PREFIX + entry.conversationKey,
+                title = "$appLabel · ${entry.conversation}",
+                summary = stringResource(R.string.message_assistant_recent_summary),
+                checked = entry.conversationKey in (current?.trustedConversations ?: emptySet()),
+            )
+        }
     }
 
     SettingsSpecPageContent(
@@ -102,6 +124,14 @@ fun MessageAssistantSettingsContent() {
                     layout = SettingsSectionLayout.GroupedCard,
                     rows = listOf(
                         SettingsRowSpec.Message(
+                            title = stringResource(R.string.message_assistant_recent_title),
+                        ),
+                    ) + trustedRows,
+                ),
+                SettingsSectionSpec(
+                    layout = SettingsSectionLayout.GroupedCard,
+                    rows = listOf(
+                        SettingsRowSpec.Message(
                             title = stringResource(
                                 R.string.message_assistant_trusted_count,
                                 current?.trustedConversations?.size ?: 0,
@@ -131,25 +161,52 @@ fun MessageAssistantSettingsContent() {
                 }
 
                 is SettingsRowAction.ToggleChanged -> {
-                    if (action.id.startsWith(PACKAGE_ROW_PREFIX)) {
-                        val packageName = action.id.removePrefix(PACKAGE_ROW_PREFIX)
-                        val before = snapshot
-                        snapshot = before?.copy(
-                            enabledPackages = if (action.checked) {
-                                before.enabledPackages + packageName
-                            } else {
-                                before.enabledPackages - packageName
-                            }
-                        )
-                        scope.launch {
-                            runCatching {
-                                MessageAssistantSettings.setPackageEnabled(packageName, action.checked)
-                            }.onSuccess { snapshot = it }
-                                .onFailure {
-                                    Logger.w(LOG_TAG, "package policy update failed ${it.message}")
-                                    snapshot = runCatching { MessageAssistantSettings.snapshot() }
-                                        .getOrNull() ?: before
+                    when {
+                        action.id.startsWith(PACKAGE_ROW_PREFIX) -> {
+                            val packageName = action.id.removePrefix(PACKAGE_ROW_PREFIX)
+                            val before = snapshot
+                            snapshot = before?.copy(
+                                enabledPackages = if (action.checked) {
+                                    before.enabledPackages + packageName
+                                } else {
+                                    before.enabledPackages - packageName
                                 }
+                            )
+                            scope.launch {
+                                runCatching {
+                                    MessageAssistantSettings.setPackageEnabled(packageName, action.checked)
+                                }.onSuccess { snapshot = it }
+                                    .onFailure {
+                                        Logger.w(LOG_TAG, "package policy update failed ${it.message}")
+                                        snapshot = runCatching { MessageAssistantSettings.snapshot() }
+                                            .getOrNull() ?: before
+                                    }
+                            }
+                        }
+
+                        action.id.startsWith(TRUSTED_ROW_PREFIX) -> {
+                            val conversationKey = action.id.removePrefix(TRUSTED_ROW_PREFIX)
+                            val before = snapshot
+                            snapshot = before?.copy(
+                                trustedConversations = if (action.checked) {
+                                    before.trustedConversations + conversationKey
+                                } else {
+                                    before.trustedConversations - conversationKey
+                                }
+                            )
+                            scope.launch {
+                                runCatching {
+                                    MessageAssistantSettings.setTrustedConversation(
+                                        conversationKey,
+                                        action.checked,
+                                    )
+                                }.onSuccess { snapshot = it }
+                                    .onFailure {
+                                        Logger.w(LOG_TAG, "trusted chat update failed ${it.message}")
+                                        snapshot = runCatching { MessageAssistantSettings.snapshot() }
+                                            .getOrNull() ?: before
+                                    }
+                            }
                         }
                     }
                 }
