@@ -9,6 +9,7 @@ import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.message.MessageAssistantCoordinator
 import com.niki914.zafiro.repo.SecurityAuditPersistence
 import com.niki914.zafiro.repo.SensitiveAppSettings
 import com.niki914.zafiro.repo.UpdateCheckHolder
@@ -39,6 +40,10 @@ class App : Application() {
         // T3：消息级增量持久化器（观察 LLMController 当前会话快照流，
         // 独立于 UI 生命周期——回合可能在宿主后台跑，ViewModel 已销毁时仍落盘）
         ConversationPersister.start(applicationScope)
+        // Notification-based chat assistance uses an isolated one-shot LLM session and keeps
+        // inbound bodies/generated suggestions in memory only. Local policy gates every model
+        // request and is checked again immediately before any RemoteInput dispatch.
+        MessageAssistantCoordinator.start(applicationScope)
         RuntimeEnvironment.install(createAppRuntimeBridge())
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         DynamicColors.applyToActivitiesIfAvailable(this)
