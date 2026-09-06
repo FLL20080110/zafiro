@@ -36,6 +36,7 @@ import com.niki914.zafiro.chat.agentic.python.PyRuntime
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
+import com.niki914.zafiro.settings.RuntimeCapabilityRegistry
 import com.niki914.zafiro.settings.RuntimeEnvironment
 import com.niki914.zafiro.settings.model.LlmProtocol
 import kotlinx.coroutines.CancellationException
@@ -244,6 +245,7 @@ object LLMController {
         val prompt = promptComposer.compose(
             PromptComposerInput(
                 additionalInstructions = llmConfig.prompt,
+                runtimeCapabilityContext = RuntimeCapabilityRegistry.promptFragment(),
                 memoryItems = buildMemoryItems(llmConfig),
                 tools = resolvedTools,
                 enabledSkills = enabledSkills,
