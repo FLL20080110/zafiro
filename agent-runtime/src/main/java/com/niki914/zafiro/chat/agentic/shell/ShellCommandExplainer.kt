@@ -10,10 +10,7 @@ package com.niki914.zafiro.chat.agentic.shell
  */
 object ShellCommandExplainer {
     fun explain(command: String): String {
-        val normalized = command
-            .lowercase()
-            .replace(WHITESPACE_REGEX, " ")
-            .trim()
+        val normalized = command.normalizedForExplanation()
 
         return when {
             normalized.matchesAny("pm install", "cmd package install") ->
@@ -77,6 +74,61 @@ object ShellCommandExplainer {
                 "这条命令将通过 Shell 在设备上执行。具体作用取决于命令和参数；允许前请确认它是否与当前任务一致。"
         }
     }
+
+    /**
+     * A concise worst-case impact for the permission prompt. This intentionally
+     * stays category-level and never repeats command arguments or identifiers.
+     */
+    fun worstCaseImpact(command: String): String {
+        val normalized = command.normalizedForExplanation()
+
+        return when {
+            normalized.matchesAny("pm uninstall", "pm clear", "cmd package uninstall") ->
+                "应用及其本地数据可能被删除，且部分数据无法恢复。"
+
+            normalized.matchesAny("pm install", "cmd package install") ->
+                "设备可能安装或更新一个应用，从而获得该应用声明的能力与权限。"
+
+            normalized.matchesAny("pm disable", "pm disable-user", "pm suspend", "appops", "dpm", "cmd package") ->
+                "应用可能无法正常运行，或其权限、设备管理能力发生改变。"
+
+            normalized.matchesAny("settings put", "settings delete") || normalized.containsCommand("setprop") ->
+                "系统行为可能被改变；错误设置可能造成网络、权限或系统功能异常。"
+
+            normalized.containsCommand("rm") ->
+                "目标文件或目录可能永久丢失。"
+
+            normalized.containsCommand("mv") ->
+                "文件位置或名称改变后，应用可能无法再找到原数据。"
+
+            normalized.containsAnyCommand("chmod", "chown", "chgrp") ->
+                "文件可能变得无法访问，或被授予过大的访问权限。"
+
+            normalized.matchesAny("am force-stop") || normalized.containsAnyCommand("kill", "pkill", "killall") ->
+                "正在运行的任务会被强制中断，未保存的数据可能丢失。"
+
+            normalized.containsAnyCommand("reboot", "shutdown", "poweroff") ->
+                "设备会中断当前任务并重启或关机。"
+
+            normalized.containsAnyCommand("su", "magisk") ->
+                "命令可能获得高权限，从而修改普通应用无法修改的系统数据或设置。"
+
+            normalized.containsAnyCommand("curl", "wget") ->
+                "设备可能向外部服务器发送数据或下载内容。"
+
+            normalized.containsAnyCommand("iptables", "ip6tables", "nft") || normalized.matchesAny("ip route", "ip rule") ->
+                "网络规则可能被改坏，导致应用或整台设备无法正常联网。"
+
+            normalized.containsCommand("mount") ->
+                "文件系统访问方式可能改变，严重时会影响系统或应用稳定性。"
+
+            else ->
+                "允许后，这条 Shell 命令会以当前工具权限执行；若参数不符合预期，可能产生不可逆影响。"
+        }
+    }
+
+    private fun String.normalizedForExplanation(): String =
+        lowercase().replace(WHITESPACE_REGEX, " ").trim()
 
     private fun String.matchesAny(vararg fragments: String): Boolean =
         fragments.any { fragment -> contains(fragment) }
