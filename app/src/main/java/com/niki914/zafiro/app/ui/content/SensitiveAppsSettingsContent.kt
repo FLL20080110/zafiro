@@ -65,7 +65,7 @@ fun SensitiveAppsSettingsContent() {
                         }
                     }
                     .distinctBy(LaunchableApp::packageName)
-                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+                    .sortedBy { it.label.lowercase() }
                     .toList()
             }.getOrElse {
                 Logger.w(LOG_TAG, "load apps failed ${it.message}")
