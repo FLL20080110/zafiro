@@ -17,7 +17,7 @@ data class ToolPermissionRequest(
     val toolName: String,
     val command: String,
     val matchedRuleName: String,
-    /** 风险详情供确认 UI 使用；持久审计仅记录稳定策略代码与固定原因。 */
+    /** 风险详情仅供确认 UI 使用；持久审计不复制该自由文本。 */
     val riskLevel: SecurityRiskLevel = SecurityRiskLevel.HIGH,
     val riskReason: String? = null,
     /**
@@ -50,6 +50,19 @@ enum class ToolPermissionResponse { ALLOWED, DENIED_BY_USER, DENIED_UNAVAILABLE 
  */
 object ToolPermissionCoordinator {
     private const val LOG_TAG = "niki914_nexus_ToolPermission"
+    private const val USER_EXECUTION_RULE_AUDIT_NAME = "User execution rule"
+
+    private val SAFE_AUDIT_RULE_NAMES = setOf(
+        "Sensitive: file mutation",
+        "Sensitive: app/package management",
+        "Sensitive: system settings",
+        "Sensitive: process/device control",
+        "Sensitive: privilege escalation",
+        "Sensitive: network transfer",
+        "Sensitive: network policy",
+        "Privileged identity: root",
+        "Privileged identity: shizuku",
+    )
 
     @Volatile
     var canRequestUserConfirmation: Boolean = false
@@ -203,6 +216,16 @@ object ToolPermissionCoordinator {
             .joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
+    /**
+     * Audit persistence must never inherit user-controlled execution-rule names. Built-in
+     * confirmation names and privileged identities are fixed application constants; every
+     * other rule name is collapsed to a stable category while the full name remains UI-only.
+     */
+    private fun minimizedAuditRuleName(request: ToolPermissionRequest): String? {
+        val ruleName = request.matchedRuleName.trim().takeIf(String::isNotEmpty) ?: return null
+        return if (ruleName in SAFE_AUDIT_RULE_NAMES) ruleName else USER_EXECUTION_RULE_AUDIT_NAME
+    }
+
     private fun audit(
         request: ToolPermissionRequest,
         kind: SecurityAuditKind,
@@ -213,7 +236,7 @@ object ToolPermissionCoordinator {
             kind = kind,
             riskLevel = request.riskLevel,
             toolName = request.toolName,
-            ruleName = request.matchedRuleName,
+            ruleName = minimizedAuditRuleName(request),
             policyCode = policyCode,
             reason = reason,
             command = request.command,
