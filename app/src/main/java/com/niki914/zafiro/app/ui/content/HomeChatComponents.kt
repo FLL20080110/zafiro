@@ -370,6 +370,12 @@ fun AssistantErrorBlock(
     }
 }
 
+data class ChatModelOption(
+    val id: String,
+    val label: String,
+    val model: String,
+)
+
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 fun LiquidChatComposer(
@@ -380,6 +386,10 @@ fun LiquidChatComposer(
     isGenerating: Boolean,
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
+    modelOptions: List<ChatModelOption> = emptyList(),
+    activeModelId: String? = null,
+    onModelSelect: (String) -> Unit = {},
+    onUploadClick: () -> Unit = {},
 ) {
     val canSend = !isGenerating && value.isNotBlank()
     val buttonEnabled = isGenerating || canSend
@@ -389,6 +399,8 @@ fun LiquidChatComposer(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
     }
+    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
+    val modelMenuExpanded = remember { androidx.compose.runtime.mutableStateOf(false) }
 
     LiquidTextField(
         value = value,
@@ -400,27 +412,62 @@ fun LiquidChatComposer(
         minHeight = 68.dp,
         modifier = modifier.fillMaxWidth(),
         trailingContent = {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
-                ActionBarButton(
-                    onClick = if (isGenerating) onStopClick else onSendClick,
-                    enabled = buttonEnabled,
-                ) {
-                    if (isGenerating) {
-                        LoadingIndicator(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clearAndSetSemantics {
-                                    contentDescription = stopContentDescription
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    androidx.compose.material3.TextButton(
+                        onClick = { modelMenuExpanded.value = true },
+                        enabled = !isGenerating && modelOptions.isNotEmpty(),
+                    ) {
+                        Text((activeModel?.label ?: activeModel?.model ?: "模型").take(14))
+                    }
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = modelMenuExpanded.value,
+                        onDismissRequest = { modelMenuExpanded.value = false },
+                    ) {
+                        modelOptions.forEach { option ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (option.model.isBlank() || option.label == option.model) option.label
+                                        else "${option.label} · ${option.model}"
+                                    )
                                 },
-                            color = contentColor,
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_arrow_up),
-                            contentDescription = stringResource(
-                                R.string.ui_home_send_content_description
-                            ),
-                        )
+                                onClick = {
+                                    modelMenuExpanded.value = false
+                                    if (option.id != activeModelId) onModelSelect(option.id)
+                                },
+                            )
+                        }
+                    }
+                }
+                androidx.compose.material3.TextButton(
+                    onClick = onUploadClick,
+                    enabled = !isGenerating,
+                ) {
+                    Text("上传")
+                }
+                CompositionLocalProvider(LocalContentColor provides contentColor) {
+                    ActionBarButton(
+                        onClick = if (isGenerating) onStopClick else onSendClick,
+                        enabled = buttonEnabled,
+                    ) {
+                        if (isGenerating) {
+                            LoadingIndicator(
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clearAndSetSemantics {
+                                        contentDescription = stopContentDescription
+                                    },
+                                color = contentColor,
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_up),
+                                contentDescription = stringResource(
+                                    R.string.ui_home_send_content_description
+                                ),
+                            )
+                        }
                     }
                 }
             }
