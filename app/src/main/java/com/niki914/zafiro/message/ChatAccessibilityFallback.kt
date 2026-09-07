@@ -17,8 +17,9 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Fail-closed rules:
  * - exactly one visible, enabled, non-search editable target must exist;
- * - the supported foreground package must still match; and
- * - the accessibility session id captured when the suggestion was created must still match.
+ * - the supported foreground package must still match;
+ * - the accessibility session id captured when the suggestion was created must still match; and
+ * - the capability snapshot must be recent enough to represent the current chat UI.
  */
 object ChatAccessibilityFallback {
     private const val MAX_VISITED_NODES = 400
@@ -39,6 +40,9 @@ object ChatAccessibilityFallback {
                 currentPackage = packageName,
                 currentSessionId = sessionId,
                 editableInputCount = editableInputCount,
+            ) && AccessibilityFallbackPolicy.isFreshSnapshot(
+                updatedAtElapsedMs = updatedAtElapsedMs,
+                nowElapsedMs = SystemClock.elapsedRealtime(),
             )
     }
 
@@ -62,7 +66,11 @@ object ChatAccessibilityFallback {
                 currentPackage = current.packageName,
                 currentSessionId = current.sessionId,
                 editableInputCount = current.editableInputCount,
-            )) return false
+            ) || !AccessibilityFallbackPolicy.isFreshSnapshot(
+                updatedAtElapsedMs = current.updatedAtElapsedMs,
+                nowElapsedMs = SystemClock.elapsedRealtime(),
+            )
+        ) return false
         return fillHandler?.invoke(expectedPackage, normalizedText) == true
     }
 
