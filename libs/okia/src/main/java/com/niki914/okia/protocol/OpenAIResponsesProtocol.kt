@@ -158,11 +158,27 @@ class OpenAIResponsesProtocol(
 
     // ── 请求体 ─────────────────────────────────────────────────────────────
 
-    private fun buildRequestBody(snapshot: RequestSnapshot, history: List<Message>): JsonObject =
-        buildJsonObject {
+    private fun buildRequestBody(snapshot: RequestSnapshot, history: List<Message>): JsonObject {
+        // Responses requires historical function_call items to be paired with
+        // function_call_output. Interrupted/restored/rewound sessions can contain
+        // only one side; drop orphan protocol items instead of inventing a result.
+        val toolCallIds = history.asSequence()
+            .filterIsInstance<Message.Assistant>()
+            .flatMap { it.message.content.asSequence().filterIsInstance<ContentBlock.ToolCall>() }
+            .map { it.id }
+            .toSet()
+        val toolResultIds = history.asSequence()
+            .filterIsInstance<Message.ToolResult>()
+            .map { it.callId }
+            .toSet()
+        val pairedToolCallIds = toolCallIds intersect toolResultIds
+
+        return buildJsonObject {
             put("model", snapshot.model)
             put("input", buildJsonArray {
-                history.forEach { message -> addInputItem(snapshot, message).forEach { add(it) } }
+                history.forEach { message ->
+                    addInputItem(snapshot, message, pairedToolCallIds).forEach { add(it) }
+                }
             })
             snapshot.systemPrompt?.let { put("instructions", it) }
             put("stream", true)
@@ -180,6 +196,7 @@ class OpenAIResponsesProtocol(
                 put("tools", buildJsonArray { snapshot.tools.forEach { add(convertTool(it)) } })
             }
         }
+    }
 
     /**
      * 消息 → Responses input item 列表。一条助手消息可能产出多个 item：
@@ -188,7 +205,11 @@ class OpenAIResponsesProtocol(
      * reasoning item（不把其文本拼进 message，避免重复）；无 payload 或前缀
      * 不认识的思考块继续按明文合并进文本（DeepSeek 网关形态）。
      */
-    private fun addInputItem(snapshot: RequestSnapshot, message: Message): List<JsonObject> = when (message) {
+    private fun addInputItem(
+        snapshot: RequestSnapshot,
+        message: Message,
+        pairedToolCallIds: Set<String>
+    ): List<JsonObject> = when (message) {
         is Message.User -> listOf(buildJsonObject {
             put("role", "user")
             put("content", userContent(snapshot, message.content))
@@ -198,7 +219,9 @@ class OpenAIResponsesProtocol(
             val items = mutableListOf<JsonObject>()
             val textBlocks = message.message.content.filterIsInstance<ContentBlock.Text>()
             val thinkingBlocks = message.message.content.filterIsInstance<ContentBlock.Thinking>()
-            val toolCalls = message.message.content.filterIsInstance<ContentBlock.ToolCall>()
+            val toolCalls = message.message.content
+                .filterIsInstance<ContentBlock.ToolCall>()
+                .filter { it.id in pairedToolCallIds }
             // 带合法 OpenAI reasoning payload 的块 → 原样回放 reasoning items（保序）
             thinkingBlocks.forEach { block ->
                 extractReasoningItems(block.opaquePayload)?.forEach { items += it }
@@ -230,30 +253,36 @@ class OpenAIResponsesProtocol(
             items
         }
 
-        is Message.ToolResult -> listOf(buildJsonObject {
-            put("type", "function_call_output")
-            put("call_id", message.callId)
-            val image = (message.outcome as? ToolCallOutcome.Success)?.image
-            if (image != null && snapshot.supportsImages) {
-                val loader = snapshot.imageLoader
-                val bytes = loader?.load(image.path)
-                if (bytes != null) {
-                    val dataUrl = "data:${image.mimeType};base64,${Base64.encode(bytes)}"
-                    put("output", buildJsonArray {
-                        add(buildJsonObject {
-                            put("type", "input_text")
-                            put("text", message.outcome.providerContent())
-                        })
-                        add(buildJsonObject {
-                            put("type", "input_image")
-                            put("image_url", dataUrl)
-                        })
-                    })
-                    return@buildJsonObject
-                }
+        is Message.ToolResult -> {
+            if (message.callId !in pairedToolCallIds) {
+                emptyList()
+            } else {
+                listOf(buildJsonObject {
+                    put("type", "function_call_output")
+                    put("call_id", message.callId)
+                    val image = (message.outcome as? ToolCallOutcome.Success)?.image
+                    if (image != null && snapshot.supportsImages) {
+                        val loader = snapshot.imageLoader
+                        val bytes = loader?.load(image.path)
+                        if (bytes != null) {
+                            val dataUrl = "data:${image.mimeType};base64,${Base64.encode(bytes)}"
+                            put("output", buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "input_text")
+                                    put("text", message.outcome.providerContent())
+                                })
+                                add(buildJsonObject {
+                                    put("type", "input_image")
+                                    put("image_url", dataUrl)
+                                })
+                            })
+                            return@buildJsonObject
+                        }
+                    }
+                    put("output", message.outcome.providerContent())
+                })
             }
-            put("output", message.outcome.providerContent())
-        })
+        }
     }
 
     // ── reasoning opaque payload（envelope 封装 / 解析） ───────────────────
