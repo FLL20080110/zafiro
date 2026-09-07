@@ -3,6 +3,7 @@ package com.niki914.zafiro.chat.agentic.accessibility
 import android.os.Build
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * Local-only sensitive page classifier used to pause AI screen interaction before
@@ -17,6 +18,7 @@ object SensitivePageGuard {
         PASSWORD,
         OTP,
         PAYMENT,
+        OVERLAY,
         SENSITIVE_APP,
     }
 
@@ -90,6 +92,13 @@ object SensitivePageGuard {
 
         if (roots.isNotEmpty()) {
             for (root in roots.take(MAX_WINDOWS_TO_SCAN)) {
+                if (isApplicationOverlay(root)) {
+                    return Decision(
+                        blocked = true,
+                        kind = Kind.OVERLAY,
+                        reasonCode = "APPLICATION_OVERLAY_WINDOW",
+                    )
+                }
                 val decision = evaluate(root)
                 if (decision.blocked) return decision
             }
@@ -102,7 +111,24 @@ object SensitivePageGuard {
             null
         } ?: return Decision(blocked = false)
 
+        if (isApplicationOverlay(root)) {
+            return Decision(
+                blocked = true,
+                kind = Kind.OVERLAY,
+                reasonCode = "APPLICATION_OVERLAY_WINDOW",
+            )
+        }
+
         return evaluate(root)
+    }
+
+    private fun isApplicationOverlay(root: AccessibilityNodeInfo): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            root.window?.type == AccessibilityWindowInfo.TYPE_APPLICATION_OVERLAY
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     internal fun evaluate(root: AccessibilityNodeInfo): Decision {
@@ -192,6 +218,7 @@ object SensitivePageGuard {
             Kind.PASSWORD -> "password"
             Kind.OTP -> "one-time-code"
             Kind.PAYMENT -> "payment"
+            Kind.OVERLAY -> "screen-overlay"
             Kind.SENSITIVE_APP -> "user-protected app"
             null -> "sensitive"
         }
