@@ -5,6 +5,10 @@
     <string name="security_audit_description">安全事件仅保存在本机应用私有目录，不会上传或进入系统云备份；最多保留 200 条。命令仅保留 SHA-256 指纹，不保留命令正文。</string>
     <string name="security_audit_empty">暂无安全审计记录。</string>
     <string name="security_audit_clear">清空记录</string>
+    <string name="security_audit_clear_confirm_title">清空安全审计记录？</string>
+    <string name="security_audit_clear_confirm_message">这会永久删除本机保存的全部安全审计记录，且无法撤销。</string>
+    <string name="security_audit_clear_confirm_action">确认清空</string>
+    <string name="security_audit_clear_cancel">取消</string>
     <string name="security_audit_event_tool">工具：%1$s</string>
     <string name="security_audit_event_rule">规则：%1$s</string>
     <string name="security_audit_event_policy">策略：%1$s</string>
