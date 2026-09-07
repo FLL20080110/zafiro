@@ -21,23 +21,36 @@ object IncomingMessageReplyRegistry {
 
     private data class Entry(
         val action: Notification.Action,
+        val notificationKey: String,
         val createdAtElapsedMs: Long,
     )
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
-    fun register(action: Notification.Action): String? {
+    fun register(action: Notification.Action, notificationKey: String): String? {
         // A messaging direct-reply action should expose one unambiguous free-form text field.
         // Some OEM/app actions may expose multiple RemoteInputs for structured data; duplicating the
         // same generated reply into every result key risks malformed or unintended dispatches.
         // Fail closed and let the coordinator fall back to suggestion/manual UI instead.
         val remoteInputs = eligibleTextInputs(action)
-        if (remoteInputs.size != 1) return null
+        val key = notificationKey.trim()
+        if (remoteInputs.size != 1 || key.isEmpty()) return null
         pruneExpired()
         trimToCapacity()
         val id = UUID.randomUUID().toString()
-        entries[id] = Entry(action, SystemClock.elapsedRealtime())
+        entries[id] = Entry(action, key, SystemClock.elapsedRealtime())
         return id
+    }
+
+    /**
+     * Revokes all RemoteInput capabilities derived from a notification that has been removed or
+     * replaced. This prevents an old suggestion/agent result from replying through a stale
+     * PendingIntent after the source notification is no longer current.
+     */
+    fun revokeForNotification(notificationKey: String) {
+        val key = notificationKey.trim()
+        if (key.isEmpty()) return
+        entries.entries.removeIf { it.value.notificationKey == key }
     }
 
     /** Automatic replies require the full auto-reply allowlist policy. */
@@ -86,7 +99,7 @@ object IncomingMessageReplyRegistry {
         // PendingIntent so a cancelled/failed dispatch cannot accidentally leave a replayable
         // capability behind for a later retry under different UI or policy state.
         val entry = entries.remove(handleId)
-            ?: return Result.failure(IllegalStateException("Reply handle unavailable, expired, or already used"))
+            ?: return Result.failure(IllegalStateException("Reply handle unavailable, expired, revoked, or already used"))
         val ageMs = SystemClock.elapsedRealtime() - entry.createdAtElapsedMs
         if (ageMs < 0L || ageMs > HANDLE_TTL_MS) {
             return Result.failure(IllegalStateException("Reply handle expired"))
