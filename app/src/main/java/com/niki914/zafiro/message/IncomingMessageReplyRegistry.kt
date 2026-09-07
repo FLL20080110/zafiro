@@ -27,8 +27,12 @@ object IncomingMessageReplyRegistry {
     private val entries = ConcurrentHashMap<String, Entry>()
 
     fun register(action: Notification.Action): String? {
-        val remoteInputs = action.remoteInputs.orEmpty()
-        if (remoteInputs.none { it.allowFreeFormInput && it.resultKey.isNotBlank() }) return null
+        // A messaging direct-reply action should expose one unambiguous free-form text field.
+        // Some OEM/app actions may expose multiple RemoteInputs for structured data; duplicating the
+        // same generated reply into every result key risks malformed or unintended dispatches.
+        // Fail closed and let the coordinator fall back to suggestion/manual UI instead.
+        val remoteInputs = eligibleTextInputs(action)
+        if (remoteInputs.size != 1) return null
         pruneExpired()
         trimToCapacity()
         val id = UUID.randomUUID().toString()
@@ -88,16 +92,20 @@ object IncomingMessageReplyRegistry {
             return Result.failure(IllegalStateException("Reply handle expired"))
         }
 
-        val inputs = entry.action.remoteInputs.orEmpty()
-            .filter { it.allowFreeFormInput && it.resultKey.isNotBlank() }
-        if (inputs.isEmpty()) return Result.failure(IllegalStateException("No free-form RemoteInput"))
+        // Re-validate at dispatch time in case an action object is malformed or platform behavior
+        // differs from what was observed during registration. Ambiguous inputs never auto-send.
+        val inputs = eligibleTextInputs(entry.action)
+        if (inputs.size != 1) {
+            return Result.failure(IllegalStateException("Ambiguous or unavailable free-form RemoteInput"))
+        }
 
         return runCatching {
+            val input = inputs.single()
             val results = Bundle().apply {
-                inputs.forEach { input -> putCharSequence(input.resultKey, text) }
+                putCharSequence(input.resultKey, text)
             }
             val intent = Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-            RemoteInput.addResultsToIntent(inputs.toTypedArray(), intent, results)
+            RemoteInput.addResultsToIntent(arrayOf(input), intent, results)
             entry.action.actionIntent.send(null, 0, intent)
         }
     }
@@ -105,6 +113,10 @@ object IncomingMessageReplyRegistry {
     fun clear() {
         entries.clear()
     }
+
+    private fun eligibleTextInputs(action: Notification.Action): List<RemoteInput> =
+        action.remoteInputs.orEmpty()
+            .filter { it.allowFreeFormInput && it.resultKey.isNotBlank() }
 
     private fun pruneExpired() {
         val now = SystemClock.elapsedRealtime()
