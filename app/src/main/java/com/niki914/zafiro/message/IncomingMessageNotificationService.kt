@@ -1,7 +1,6 @@
 package com.niki914.zafiro.message
 
 import android.app.Notification
-import android.app.RemoteInput
 import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -15,9 +14,16 @@ import android.service.notification.StatusBarNotification
 class IncomingMessageNotificationService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
-        val notification = sbn?.notification ?: return
-        val packageName = sbn.packageName.orEmpty()
+        val statusBarNotification = sbn ?: return
+        val packageName = statusBarNotification.packageName.orEmpty()
         if (packageName !in SUPPORTED_CHAT_PACKAGES) return
+
+        // A replacement notification with the same system key invalidates any older direct-reply
+        // capability before we inspect the new payload. If the replacement no longer carries a
+        // usable reply action, stale handles remain revoked rather than silently surviving.
+        IncomingMessageReplyRegistry.revokeForNotification(statusBarNotification.key)
+
+        val notification = statusBarNotification.notification
         if (notification.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
 
         val extras = notification.extras ?: return
@@ -55,14 +61,16 @@ class IncomingMessageNotificationService : NotificationListenerService() {
             .ifBlank { sender }
 
         val replyAction = notification.actions.orEmpty().firstOrNull(::hasFreeFormReply)
-        val replyHandleId = replyAction?.let(IncomingMessageReplyRegistry::register)
+        val replyHandleId = replyAction?.let { action ->
+            IncomingMessageReplyRegistry.register(action, statusBarNotification.key)
+        }
 
         val message = IncomingChatMessage(
             packageName = packageName,
             sender = sender,
             conversation = conversation,
             text = text,
-            postedAtMs = sbn.postTime,
+            postedAtMs = statusBarNotification.postTime,
             systemReplyAvailable = replyHandleId != null,
             sensitive = isSensitiveMessage(text),
             replyHandleId = replyHandleId,
@@ -72,6 +80,12 @@ class IncomingMessageNotificationService : NotificationListenerService() {
         // explicit trust toggle without requiring users to type fragile internal keys.
         RecentConversationRegistry.observe(message)
         IncomingMessageBus.publish(message)
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        val statusBarNotification = sbn ?: return
+        if (statusBarNotification.packageName.orEmpty() !in SUPPORTED_CHAT_PACKAGES) return
+        IncomingMessageReplyRegistry.revokeForNotification(statusBarNotification.key)
     }
 
     private fun hasFreeFormReply(action: Notification.Action): Boolean {
