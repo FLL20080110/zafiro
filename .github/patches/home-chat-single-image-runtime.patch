@@ -1,7 +1,7 @@
 diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/model/HomeChatState.kt b/app/src/main/java/com/niki914/zafiro/app/ui/model/HomeChatState.kt
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/model/HomeChatState.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/model/HomeChatState.kt
-@@ -168,6 +168,7 @@ sealed interface HomeChatIntent {
+@@ -168,5 +168,6 @@ sealed interface HomeChatIntent {
      data class InputChanged(val value: String) : HomeChatIntent
      data object Send : HomeChatIntent
 +    data class SendWithImage(val image: ContentBlock.Image) : HomeChatIntent
