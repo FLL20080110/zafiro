@@ -170,9 +170,7 @@ object MessageAssistantCoordinator {
                 return
             }
         val initialDecision = MessageAssistantSettings.decide(initialPolicy, message)
-        if (initialDecision != MessageAssistantSettings.Decision.SUGGEST_ONLY &&
-            initialDecision != MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED
-        ) {
+        if (!isActionableDecision(initialDecision)) {
             if (initialDecision != MessageAssistantSettings.Decision.IGNORE) recordBlocked(initialDecision)
             return
         }
@@ -185,8 +183,22 @@ object MessageAssistantCoordinator {
         }
         if (generated.isBlank()) return
 
+        // Policy may change while the cloud model is generating. Re-read immediately before
+        // any send/suggestion side effect so privacy mode, global/app disable, trust removal,
+        // or AUTO_REPLY -> SUGGEST downgrades take effect without a stale-policy window.
+        val currentPolicy = runCatching { MessageAssistantSettings.snapshot() }
+            .getOrElse {
+                Logger.w(LOG_TAG, "policy recheck failed ${it.message}")
+                return
+            }
+        val currentDecision = MessageAssistantSettings.decide(currentPolicy, message)
+        if (!isActionableDecision(currentDecision)) {
+            if (currentDecision != MessageAssistantSettings.Decision.IGNORE) recordBlocked(currentDecision)
+            return
+        }
+
         var autoSent = false
-        if (initialDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
+        if (currentDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
             if (!allowAutoReplyNow(message)) {
                 recordBlocked(MessageAssistantSettings.Decision.BLOCKED_UNTRUSTED, "AUTO_REPLY_COOLDOWN")
             } else {
@@ -217,7 +229,7 @@ object MessageAssistantCoordinator {
         val suggestionId = UUID.randomUUID().toString()
         val manualSendAvailable = !autoSent && message.systemReplyAvailable
         val fallback = ChatAccessibilityFallback.snapshot.value
-        val accessibilityFillAvailable = initialPolicy.accessibilityFallbackEnabled &&
+        val accessibilityFillAvailable = currentPolicy.accessibilityFallbackEnabled &&
             !autoSent && !message.systemReplyAvailable &&
             fallback.packageName == message.packageName && fallback.readyForManualFallback
         if (manualSendAvailable || accessibilityFillAvailable) {
@@ -286,6 +298,10 @@ object MessageAssistantCoordinator {
         val ttl = if (systemReplyAvailable) SUGGESTION_TTL_MS else ACCESSIBILITY_SUGGESTION_TTL_MS
         return nowElapsedMs - createdAtElapsedMs > ttl
     }
+
+    internal fun isActionableDecision(decision: MessageAssistantSettings.Decision): Boolean =
+        decision == MessageAssistantSettings.Decision.SUGGEST_ONLY ||
+            decision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED
 
     internal fun sanitizeGeneratedReply(value: String): String = value.trim().take(MAX_REPLY_CHARS)
 
