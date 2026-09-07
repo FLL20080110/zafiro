@@ -75,10 +75,14 @@ object IncomingMessageReplyRegistry {
 
         val handleId = message.replyHandleId?.takeIf(String::isNotBlank)
             ?: return Result.failure(IllegalStateException("No system reply handle"))
-        val entry = entries[handleId]
-            ?: return Result.failure(IllegalStateException("Reply handle unavailable or expired"))
-        if (SystemClock.elapsedRealtime() - entry.createdAtElapsedMs > HANDLE_TTL_MS) {
-            entries.remove(handleId)
+
+        // Treat every RemoteInput handle as a one-shot capability. Consume it before touching the
+        // PendingIntent so a cancelled/failed dispatch cannot accidentally leave a replayable
+        // capability behind for a later retry under different UI or policy state.
+        val entry = entries.remove(handleId)
+            ?: return Result.failure(IllegalStateException("Reply handle unavailable, expired, or already used"))
+        val ageMs = SystemClock.elapsedRealtime() - entry.createdAtElapsedMs
+        if (ageMs < 0L || ageMs > HANDLE_TTL_MS) {
             return Result.failure(IllegalStateException("Reply handle expired"))
         }
 
@@ -93,7 +97,6 @@ object IncomingMessageReplyRegistry {
             val intent = Intent().addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             RemoteInput.addResultsToIntent(inputs.toTypedArray(), intent, results)
             entry.action.actionIntent.send(null, 0, intent)
-            entries.remove(handleId)
         }
     }
 
@@ -103,6 +106,9 @@ object IncomingMessageReplyRegistry {
 
     private fun pruneExpired() {
         val now = SystemClock.elapsedRealtime()
-        entries.entries.removeIf { now - it.value.createdAtElapsedMs > HANDLE_TTL_MS }
+        entries.entries.removeIf {
+            val ageMs = now - it.value.createdAtElapsedMs
+            ageMs < 0L || ageMs > HANDLE_TTL_MS
+        }
     }
 }
