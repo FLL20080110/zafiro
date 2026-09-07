@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object IncomingMessageReplyRegistry {
     private const val HANDLE_TTL_MS = 5 * 60 * 1000L
+    private const val MAX_ACTIVE_HANDLES = 128
 
     private data class Entry(
         val action: Notification.Action,
@@ -29,6 +30,7 @@ object IncomingMessageReplyRegistry {
         val remoteInputs = action.remoteInputs.orEmpty()
         if (remoteInputs.none { it.allowFreeFormInput && it.resultKey.isNotBlank() }) return null
         pruneExpired()
+        trimToCapacity()
         val id = UUID.randomUUID().toString()
         entries[id] = Entry(action, SystemClock.elapsedRealtime())
         return id
@@ -109,6 +111,18 @@ object IncomingMessageReplyRegistry {
         entries.entries.removeIf {
             val ageMs = now - it.value.createdAtElapsedMs
             ageMs < 0L || ageMs > HANDLE_TTL_MS
+        }
+    }
+
+    /**
+     * Notification storms must not leave an unbounded number of live PendingIntent capabilities in
+     * memory. Evict the oldest handles before admitting another one; an evicted handle simply falls
+     * back to suggestion-only behavior if the user later tries to use it.
+     */
+    private fun trimToCapacity() {
+        while (entries.size >= MAX_ACTIVE_HANDLES) {
+            val oldest = entries.entries.minByOrNull { it.value.createdAtElapsedMs } ?: return
+            entries.remove(oldest.key, oldest.value)
         }
     }
 }
