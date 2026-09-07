@@ -53,7 +53,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/model/HomeChatState.kt 
          val query = currentState.input.trim()
          if (query.isBlank() || currentState.isGenerating) {
              Logger.d(
-@@ -365,7 +381,7 @@ class HomeChatViewModel internal constructor(
+@@ -365,8 +381,8 @@ class HomeChatViewModel internal constructor(
                  Logger.i(
                      LOG_TAG,
                      "send turn started turnId=$turnId conversationId=$conversationId queryLength=${query.length}"
