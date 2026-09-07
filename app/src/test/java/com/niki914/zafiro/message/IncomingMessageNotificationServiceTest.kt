@@ -58,6 +58,17 @@ class IncomingMessageNotificationServiceTest {
         assertFalse(IncomingMessageReplyRegistry.hasHandleForTest(handle))
     }
 
+    @Test
+    fun revokedNotificationHandleIsNotReportedAvailable() {
+        val handle = registerReplyHandle("notification-key")
+        assertNotNull(handle)
+        assertTrue(IncomingMessageReplyRegistry.isHandleAvailable(handle))
+
+        IncomingMessageReplyRegistry.revokeForNotification("notification-key")
+
+        assertFalse(IncomingMessageReplyRegistry.isHandleAvailable(handle))
+    }
+
     private fun registerReplyHandle(notificationKey: String): String? {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val pendingIntent = PendingIntent.getBroadcast(
