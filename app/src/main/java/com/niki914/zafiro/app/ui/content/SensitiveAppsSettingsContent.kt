@@ -31,6 +31,7 @@ private const val LOG_TAG = "niki914_nexus_SensitiveApps"
 private data class LaunchableApp(
     val packageName: String,
     val label: String,
+    val persistedOnly: Boolean = false,
 )
 
 @Composable
@@ -84,13 +85,15 @@ fun SensitiveAppsSettingsContent() {
                         LaunchableApp(
                             packageName = packageName,
                             label = packageName,
+                            persistedOnly = true,
                         )
                     }
                     .toList()
 
                 (visibleApps + savedOnlyApps)
                     .sortedWith(
-                        compareBy<LaunchableApp> { it.label.lowercase() }
+                        compareBy<LaunchableApp> { it.persistedOnly }
+                            .thenBy { it.label.lowercase() }
                             .thenBy(LaunchableApp::packageName)
                     )
             }.getOrElse {
@@ -103,6 +106,7 @@ fun SensitiveAppsSettingsContent() {
         loaded = true
     }
 
+    val staleSuffix = stringResource(R.string.sensitive_apps_saved_only_suffix)
     val rows = when {
         !loaded -> listOf(
             SettingsRowSpec.Message(
@@ -119,7 +123,7 @@ fun SensitiveAppsSettingsContent() {
         else -> apps.map { app ->
             SettingsRowSpec.Toggle(
                 id = ROW_PREFIX + app.packageName,
-                title = app.label,
+                title = if (app.persistedOnly) "${app.label} $staleSuffix" else app.label,
                 checked = app.packageName in pausedPackages,
             )
         }
