@@ -161,6 +161,7 @@ fun HomeChatUiState.withClearedTransient() = copy(
 sealed interface HomeChatIntent {
     data class InputChanged(val value: String) : HomeChatIntent
     data object Send : HomeChatIntent
+    data class SendWithImage(val image: ContentBlock.Image) : HomeChatIntent
     data object StopGenerating : HomeChatIntent
     data object NewConversation : HomeChatIntent
     data class LoadConversation(val id: String) : HomeChatIntent
@@ -177,6 +178,13 @@ sealed interface HomeChatIntent {
 
 internal interface HomeChatRuntime {
     fun stream(query: String): Flow<LlmStreamEvent>
+    fun stream(query: String, image: ContentBlock.Image?): Flow<LlmStreamEvent> {
+        if (image == null) return stream(query)
+        throw UnsupportedOperationException(
+            "image input is not supported by this HomeChatRuntime implementation"
+        )
+    }
+
     suspend fun resetConversation()
     suspend fun stopCurrentRound()
     suspend fun ensureSession(): String
@@ -189,6 +197,13 @@ private object LlmHomeChatRuntime : HomeChatRuntime {
         LLMController.stream(
             query = query,
             fromUserInterface = true,
+        )
+
+    override fun stream(query: String, image: ContentBlock.Image?): Flow<LlmStreamEvent> =
+        LLMController.stream(
+            query = query,
+            fromUserInterface = true,
+            image = image,
         )
 
     override suspend fun resetConversation() = LLMController.resetConversation()
@@ -225,6 +240,7 @@ class HomeChatViewModel internal constructor(
         when (intent) {
             is HomeChatIntent.InputChanged -> onInputChanged(intent.value)
             HomeChatIntent.Send -> sendCurrentInput()
+            is HomeChatIntent.SendWithImage -> sendCurrentInput(intent.image)
             HomeChatIntent.StopGenerating -> stopGenerating()
             HomeChatIntent.NewConversation -> startNewConversation()
             is HomeChatIntent.LoadConversation -> loadConversation(intent.id)
@@ -307,7 +323,7 @@ class HomeChatViewModel internal constructor(
         }
     }
 
-    private suspend fun sendCurrentInput() {
+    private suspend fun sendCurrentInput(image: ContentBlock.Image? = null) {
         val query = currentState.input.trim()
         if (query.isBlank() || currentState.isGenerating) {
             Logger.d(
@@ -353,7 +369,7 @@ class HomeChatViewModel internal constructor(
                     LOG_TAG,
                     "send turn started turnId=$turnId conversationId=$conversationId queryLength=${query.length}"
                 )
-                collectLlmStream(turnId = turnId, query = query)
+                collectLlmStream(turnId = turnId, query = query, image = image)
             } catch (throwable: Throwable) {
                 if (throwable is CancellationException) throw throwable
                 Logger.e(
@@ -410,9 +426,13 @@ class HomeChatViewModel internal constructor(
         }
     }
 
-    private suspend fun collectLlmStream(turnId: Long, query: String) {
+    private suspend fun collectLlmStream(
+        turnId: Long,
+        query: String,
+        image: ContentBlock.Image? = null,
+    ) {
         textPacer.reset()
-        runtime.stream(query).collect { event ->
+        runtime.stream(query, image).collect { event ->
             val eventName = eventName(event)
             val eventCount = currentState.streamEventCount + 1
             updateState {
