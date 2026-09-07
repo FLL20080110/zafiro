@@ -73,6 +73,28 @@ class AccessibilityFallbackPolicyTest {
     }
 
     @Test
+    fun acceptsFreshSnapshotAtBoundary() {
+        assertTrue(
+            AccessibilityFallbackPolicy.isFreshSnapshot(
+                updatedAtElapsedMs = 1_000L,
+                nowElapsedMs = 1_000L + AccessibilityFallbackPolicy.MAX_SNAPSHOT_AGE_MS,
+            )
+        )
+    }
+
+    @Test
+    fun rejectsExpiredOrInvalidSnapshot() {
+        assertFalse(
+            AccessibilityFallbackPolicy.isFreshSnapshot(
+                updatedAtElapsedMs = 1_000L,
+                nowElapsedMs = 1_001L + AccessibilityFallbackPolicy.MAX_SNAPSHOT_AGE_MS,
+            )
+        )
+        assertFalse(AccessibilityFallbackPolicy.isFreshSnapshot(0L, 5_000L))
+        assertFalse(AccessibilityFallbackPolicy.isFreshSnapshot(5_000L, 4_999L))
+    }
+
+    @Test
     fun acceptsVisibleEnabledEditableNode() {
         assertTrue(
             AccessibilityFallbackPolicy.isEditableCandidate(
