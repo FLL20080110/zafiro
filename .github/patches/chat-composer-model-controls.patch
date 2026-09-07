@@ -25,15 +25,29 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
  ) {
      val canSend = !isGenerating && value.isNotBlank()
      val buttonEnabled = isGenerating || canSend
-@@ -388,4 +398,6 @@
+@@ -386,43 +396,80 @@
+     val contentColor = if (buttonEnabled) {
+         MaterialTheme.colorScheme.primary
      } else {
          MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
      }
 +    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
 +    val modelMenuExpanded = remember { androidx.compose.runtime.mutableStateOf(false) }
  
-@@ -403,1 +415,35 @@
+     LiquidTextField(
+         value = value,
+         onValueChange = onValueChange,
+         placeholder = stringResource(R.string.ui_home_input_placeholder),
+         enabled = true,
+         singleLine = false,
+         maxLines = maxLines,
+         minHeight = 68.dp,
+         modifier = modifier.fillMaxWidth(),
+         trailingContent = {
 -            CompositionLocalProvider(LocalContentColor provides contentColor) {
+-                ActionBarButton(
+-                    onClick = if (isGenerating) onStopClick else onSendClick,
+-                    enabled = buttonEnabled,
 +            Row(verticalAlignment = Alignment.CenterVertically) {
 +                Box {
 +                    androidx.compose.material3.TextButton(
@@ -65,15 +79,50 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +                androidx.compose.material3.TextButton(
 +                    onClick = onUploadClick,
 +                    enabled = !isGenerating,
-+                ) {
+                 ) {
+-                    if (isGenerating) {
+-                        LoadingIndicator(
+-                            modifier = Modifier
+-                                .size(28.dp)
+-                                .clearAndSetSemantics {
+-                                    contentDescription = stopContentDescription
+-                                },
+-                            color = contentColor,
+-                        )
+-                    } else {
+-                        Icon(
+-                            painter = painterResource(R.drawable.ic_arrow_up),
+-                            contentDescription = stringResource(
+-                                R.string.ui_home_send_content_description
+-                            ),
+-                        )
 +                    Text("上传")
 +                }
 +                CompositionLocalProvider(LocalContentColor provides contentColor) {
-@@ -424,6 +470,7 @@
-                         )
++                    ActionBarButton(
++                        onClick = if (isGenerating) onStopClick else onSendClick,
++                        enabled = buttonEnabled,
++                    ) {
++                        if (isGenerating) {
++                            LoadingIndicator(
++                                modifier = Modifier
++                                    .size(28.dp)
++                                    .clearAndSetSemantics {
++                                        contentDescription = stopContentDescription
++                                    },
++                                color = contentColor,
++                            )
++                        } else {
++                            Icon(
++                                painter = painterResource(R.drawable.ic_arrow_up),
++                                contentDescription = stringResource(
++                                    R.string.ui_home_send_content_description
++                                ),
++                            )
++                        }
                      }
                  }
-+            }
+             }
          },
      )
  }
