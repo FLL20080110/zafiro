@@ -41,17 +41,21 @@ fun SensitiveAppsSettingsContent() {
     var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
     var pausedPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loaded by remember { mutableStateOf(false) }
+    var loadFailed by remember { mutableStateOf(false) }
+    var saveFailed by remember { mutableStateOf(false) }
     // Only the newest optimistic mutation may update visible state when its async save finishes.
     // Durable/runtime policy mutations are separately serialized by SensitiveAppSettings.
     var policyMutationVersion by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) {
-        val loadedPackages = runCatching { SensitiveAppSettings.packages() }
-            .getOrElse {
-                Logger.w(LOG_TAG, "load policy failed ${it.message}")
-                emptySet()
-            }
-        val launchableApps = withContext(Dispatchers.IO) {
+        val policyResult = runCatching { SensitiveAppSettings.packages() }
+        val loadedPackages = policyResult.getOrElse {
+            Logger.w(LOG_TAG, "load policy failed ${it.message}")
+            emptySet()
+        }
+        loadFailed = policyResult.isFailure
+
+        val launchableAppsResult = withContext(Dispatchers.IO) {
             runCatching {
                 val pm = context.packageManager
                 val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -96,18 +100,38 @@ fun SensitiveAppsSettingsContent() {
                             .thenBy { it.label.lowercase() }
                             .thenBy(LaunchableApp::packageName)
                     )
-            }.getOrElse {
-                Logger.w(LOG_TAG, "load apps failed ${it.message}")
-                emptyList()
             }
         }
+
+        apps = launchableAppsResult.getOrElse {
+            Logger.w(LOG_TAG, "load apps failed ${it.message}")
+            loadFailed = true
+            emptyList()
+        }
         pausedPackages = loadedPackages
-        apps = launchableApps
         loaded = true
     }
 
     val staleSuffix = stringResource(R.string.sensitive_apps_saved_only_suffix)
-    val rows = when {
+    val statusRows = buildList {
+        if (loadFailed) {
+            add(
+                SettingsRowSpec.Message(
+                    title = stringResource(R.string.sensitive_apps_load_failed),
+                    verticalPadding = 12.dp,
+                )
+            )
+        }
+        if (saveFailed) {
+            add(
+                SettingsRowSpec.Message(
+                    title = stringResource(R.string.sensitive_apps_save_failed),
+                    verticalPadding = 12.dp,
+                )
+            )
+        }
+    }
+    val appRows = when {
         !loaded -> listOf(
             SettingsRowSpec.Message(
                 title = stringResource(R.string.sensitive_apps_loading),
@@ -132,12 +156,22 @@ fun SensitiveAppsSettingsContent() {
     SettingsSpecPageContent(
         spec = SettingsPageSpec(
             description = stringResource(R.string.sensitive_apps_description),
-            sections = listOf(
-                SettingsSectionSpec(
-                    layout = SettingsSectionLayout.GroupedCard,
-                    rows = rows,
+            sections = buildList {
+                if (statusRows.isNotEmpty()) {
+                    add(
+                        SettingsSectionSpec(
+                            layout = SettingsSectionLayout.GroupedCard,
+                            rows = statusRows,
+                        )
+                    )
+                }
+                add(
+                    SettingsSectionSpec(
+                        layout = SettingsSectionLayout.GroupedCard,
+                        rows = appRows,
+                    )
                 )
-            ),
+            },
         ),
         onAction = { action ->
             when (action) {
@@ -150,6 +184,7 @@ fun SensitiveAppsSettingsContent() {
                         } else {
                             before - packageName
                         }
+                        saveFailed = false
                         policyMutationVersion += 1L
                         val mutationVersion = policyMutationVersion
                         scope.launch {
@@ -158,6 +193,7 @@ fun SensitiveAppsSettingsContent() {
                             }.onSuccess { saved ->
                                 if (mutationVersion == policyMutationVersion) {
                                     pausedPackages = saved
+                                    saveFailed = false
                                 }
                             }.onFailure {
                                 Logger.w(LOG_TAG, "save policy failed ${it.message}")
@@ -165,6 +201,7 @@ fun SensitiveAppsSettingsContent() {
                                     .getOrDefault(before)
                                 if (mutationVersion == policyMutationVersion) {
                                     pausedPackages = restored
+                                    saveFailed = true
                                 }
                             }
                         }
