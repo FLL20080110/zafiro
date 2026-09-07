@@ -337,6 +337,7 @@ object LLMController {
     fun stream(
         query: String,
         fromUserInterface: Boolean = false,
+        image: ContentBlock.Image? = null,
     ): Flow<LlmStreamEvent> = channelFlow {
         // Turn-level sensitive-page gate. Evaluate locally before refresh() so
         // neither the user query nor any runtime prompt/context can reach a cloud
@@ -433,8 +434,13 @@ object LLMController {
                 }
                 // 终态以返回值承载（TurnResult）；onEvent 只承担流式中间过程。
                 val result = try {
+                    val userContent = buildList {
+                        add(ContentBlock.Text(effectiveQuery))
+                        image?.let { add(it) }
+                    }
                     state.okia.send(
-                        text = effectiveQuery,
+                        content = userContent,
+                        inputText = effectiveQuery,
                         options = TurnOptions(systemPrompt = state.snapshot.config.finalSystemPrompt),
                     ) { event ->
                         val mapped = LlmStreamEventMapper.map(event, startedAtMs)
