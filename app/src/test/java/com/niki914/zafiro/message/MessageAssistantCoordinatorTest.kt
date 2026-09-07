@@ -1,5 +1,6 @@
 package com.niki914.zafiro.message
 
+import com.niki914.zafiro.repo.MessageAssistantSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,6 +22,17 @@ class MessageAssistantCoordinatorTest {
     @Test
     fun sanitizeGeneratedReplyCanRejectWhitespaceAsBlank() {
         assertEquals("", MessageAssistantCoordinator.sanitizeGeneratedReply(" \n\t "))
+    }
+
+    @Test
+    fun onlySuggestAndAutoReplyDecisionsAreActionable() {
+        assertTrue(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.SUGGEST_ONLY))
+        assertTrue(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED))
+        assertFalse(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.IGNORE))
+        assertFalse(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.BLOCKED_PRIVACY))
+        assertFalse(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.BLOCKED_SENSITIVE))
+        assertFalse(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.BLOCKED_UNTRUSTED))
+        assertFalse(MessageAssistantCoordinator.isActionableDecision(MessageAssistantSettings.Decision.BLOCKED_NO_SYSTEM_REPLY))
     }
 
     @Test
