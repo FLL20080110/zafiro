@@ -1,0 +1,88 @@
+diff --git a/libs/okia/src/main/java/com/niki914/okia/Okia.kt b/libs/okia/src/main/java/com/niki914/okia/Okia.kt
+--- a/libs/okia/src/main/java/com/niki914/okia/Okia.kt
++++ b/libs/okia/src/main/java/com/niki914/okia/Okia.kt
+@@ -3,6 +3,7 @@ import com.niki914.okia.conversation.Conversation
+ import com.niki914.okia.conversation.SessionSnapshot
+ import com.niki914.okia.event.TurnEvent
++import com.niki914.okia.message.ContentBlock
+ import com.niki914.okia.loop.AgentLoop
+ import com.niki914.okia.loop.RealAgentLoop
+ import com.niki914.okia.loop.TurnResult
+@@ -43,6 +44,28 @@ interface Okia {
+         onEvent: suspend (TurnEvent) -> Unit
+     ): TurnResult
+ 
++    /**
++     * 提交结构化用户输入。默认实现保持第三方/测试 Okia 实现的源码兼容：
++     * 仅纯文本块回退到旧 [send]；包含图片等非文本块时要求实现显式支持。
++     * [inputText] 仅用于 TurnStarted 等事件/日志语义，真实模型输入来自 [content]。
++     */
++    suspend fun send(
++        content: List<ContentBlock>,
++        inputText: String,
++        options: TurnOptions? = null,
++        onEvent: suspend (TurnEvent) -> Unit
++    ): TurnResult {
++        require(content.isNotEmpty()) { "user content must not be empty" }
++        require(content.all { it is ContentBlock.Text }) {
++            "structured user content is not supported by this Okia implementation"
++        }
++        val text = content
++            .filterIsInstance<ContentBlock.Text>()
++            .joinToString(separator = "") { it.text }
++            .ifEmpty { inputText }
++        return send(text = text, options = options, onEvent = onEvent)
++    }
++
+     // 取消当前回合；kill-then-stop（先杀工具资源再取消 job）
+     suspend fun stop(): Unit
+ 
+diff --git a/libs/okia/src/main/java/com/niki914/okia/RealOkia.kt b/libs/okia/src/main/java/com/niki914/okia/RealOkia.kt
+--- a/libs/okia/src/main/java/com/niki914/okia/RealOkia.kt
++++ b/libs/okia/src/main/java/com/niki914/okia/RealOkia.kt
+@@ -119,7 +119,32 @@ internal class RealOkia(
+         text: String,
+         options: TurnOptions?,
+         onEvent: suspend (TurnEvent) -> Unit
++    ): TurnResult = sendUserContent(
++        content = listOf(ContentBlock.Text(text)),
++        inputText = text,
++        options = options,
++        onEvent = onEvent,
++    )
++
++    override suspend fun send(
++        content: List<ContentBlock>,
++        inputText: String,
++        options: TurnOptions?,
++        onEvent: suspend (TurnEvent) -> Unit
++    ): TurnResult = sendUserContent(
++        content = content.toList(),
++        inputText = inputText,
++        options = options,
++        onEvent = onEvent,
++    )
++
++    private suspend fun sendUserContent(
++        content: List<ContentBlock>,
++        inputText: String,
++        options: TurnOptions?,
++        onEvent: suspend (TurnEvent) -> Unit,
+     ): TurnResult {
++        require(content.isNotEmpty()) { "user content must not be empty" }
+         // 回合状态原子预留（T2 竞态整改）：check + 追加 User + 启动 loop +
+         // activeTurn 赋值全部在同一临界区内完成——并发 send / rewind / update /
+         // export / close / refreshMcpTools 无法在「check 通过」与「activeTurn
+@@ -131,10 +156,10 @@ internal class RealOkia(
+         mutex.withLock {
+             check(!closed) { "Okia is closed" }
+             check(activeTurn == null) { "another turn is already active" }
+-            val turnStartEntry = tree.append(Message.User(listOf(ContentBlock.Text(text))))
++            val turnStartEntry = tree.append(Message.User(content))
+             publish()
+ 
+-            val request = buildLoopRequest(text, options)
++            val request = buildLoopRequest(inputText, options)
+             val job = turnScope.async {
+                 dependencies.agentLoop.run(request) { event -> handleEvent(event, onEvent) }
+             }
