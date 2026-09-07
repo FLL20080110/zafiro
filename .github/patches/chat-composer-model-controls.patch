@@ -1,30 +1,7 @@
 diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
-@@ -16,2 +16,4 @@
- import androidx.compose.material.icons.automirrored.filled.CallSplit
-+import androidx.compose.material.icons.filled.ArrowDropDown
-+import androidx.compose.material.icons.filled.AttachFile
- import androidx.compose.material.icons.filled.ContentCopy
-@@ -18,2 +20,4 @@
- import androidx.compose.material.icons.filled.Refresh
-+import androidx.compose.material3.DropdownMenu
-+import androidx.compose.material3.DropdownMenuItem
- import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-@@ -20,2 +24,3 @@
- import androidx.compose.material3.Icon
-+import androidx.compose.material3.IconButton
- import androidx.compose.material3.LoadingIndicator
-@@ -24,1 +29,2 @@
- import androidx.compose.material3.Text
-+import androidx.compose.material3.TextButton
-@@ -26,2 +32,5 @@
- import androidx.compose.runtime.CompositionLocalProvider
-+import androidx.compose.runtime.getValue
-+import androidx.compose.runtime.mutableStateOf
- import androidx.compose.runtime.remember
-+import androidx.compose.runtime.setValue
-@@ -368,6 +377,12 @@
+@@ -368,6 +368,12 @@
      }
  }
  
@@ -37,7 +14,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
  @Composable
  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
  fun LiquidChatComposer(
-@@ -377,6 +392,10 @@
+@@ -377,6 +383,10 @@
      isGenerating: Boolean,
      modifier: Modifier = Modifier,
      maxLines: Int = Int.MAX_VALUE,
@@ -48,31 +25,30 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
  ) {
      val canSend = !isGenerating && value.isNotBlank()
      val buttonEnabled = isGenerating || canSend
-@@ -388,4 +407,6 @@
+@@ -388,4 +398,6 @@
      } else {
          MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
      }
 +    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
-+    var modelMenuExpanded by remember { mutableStateOf(false) }
++    val modelMenuExpanded = remember { androidx.compose.runtime.mutableStateOf(false) }
  
-@@ -402,2 +423,34 @@
+@@ -402,2 +414,34 @@
          trailingContent = {
 -            CompositionLocalProvider(LocalContentColor provides contentColor) {
 +            Row(verticalAlignment = Alignment.CenterVertically) {
 +                Box {
-+                    TextButton(
-+                        onClick = { modelMenuExpanded = true },
++                    androidx.compose.material3.TextButton(
++                        onClick = { modelMenuExpanded.value = true },
 +                        enabled = !isGenerating && modelOptions.isNotEmpty(),
 +                    ) {
 +                        Text((activeModel?.label ?: activeModel?.model ?: "模型").take(14))
-+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
 +                    }
-+                    DropdownMenu(
-+                        expanded = modelMenuExpanded,
-+                        onDismissRequest = { modelMenuExpanded = false },
++                    androidx.compose.material3.DropdownMenu(
++                        expanded = modelMenuExpanded.value,
++                        onDismissRequest = { modelMenuExpanded.value = false },
 +                    ) {
 +                        modelOptions.forEach { option ->
-+                            DropdownMenuItem(
++                            androidx.compose.material3.DropdownMenuItem(
 +                                text = {
 +                                    Text(
 +                                        if (option.model.isBlank() || option.label == option.model) option.label
@@ -80,18 +56,21 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +                                    )
 +                                },
 +                                onClick = {
-+                                    modelMenuExpanded = false
++                                    modelMenuExpanded.value = false
 +                                    if (option.id != activeModelId) onModelSelect(option.id)
 +                                },
 +                            )
 +                        }
 +                    }
 +                }
-+                IconButton(onClick = onUploadClick, enabled = !isGenerating) {
-+                    Icon(Icons.Default.AttachFile, contentDescription = "上传文件")
++                androidx.compose.material3.TextButton(
++                    onClick = onUploadClick,
++                    enabled = !isGenerating,
++                ) {
++                    Text("上传")
 +                }
 +                CompositionLocalProvider(LocalContentColor provides contentColor) {
-@@ -424,6 +477,7 @@
+@@ -424,6 +468,7 @@
                          )
                      }
                  }
