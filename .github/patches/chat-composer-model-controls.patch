@@ -1,24 +1,25 @@
 diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
-@@ -15,13 +15,22 @@
- import androidx.compose.material.icons.Icons
+@@ -16,2 +16,4 @@
  import androidx.compose.material.icons.automirrored.filled.CallSplit
 +import androidx.compose.material.icons.filled.ArrowDropDown
 +import androidx.compose.material.icons.filled.AttachFile
  import androidx.compose.material.icons.filled.ContentCopy
+@@ -18,2 +20,4 @@
  import androidx.compose.material.icons.filled.Refresh
 +import androidx.compose.material3.DropdownMenu
 +import androidx.compose.material3.DropdownMenuItem
  import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+@@ -20,2 +24,3 @@
  import androidx.compose.material3.Icon
 +import androidx.compose.material3.IconButton
  import androidx.compose.material3.LoadingIndicator
- import androidx.compose.material3.LocalContentColor
- import androidx.compose.material3.MaterialTheme
+@@ -24,2 +29,3 @@
  import androidx.compose.material3.Text
 +import androidx.compose.material3.TextButton
  import androidx.compose.runtime.Composable
+@@ -26,2 +32,5 @@
  import androidx.compose.runtime.CompositionLocalProvider
 +import androidx.compose.runtime.getValue
 +import androidx.compose.runtime.mutableStateOf
