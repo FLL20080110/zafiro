@@ -15,11 +15,10 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
  import androidx.compose.material3.Icon
 +import androidx.compose.material3.IconButton
  import androidx.compose.material3.LoadingIndicator
-@@ -24,2 +29,3 @@
+@@ -24,4 +29,8 @@
  import androidx.compose.material3.Text
 +import androidx.compose.material3.TextButton
  import androidx.compose.runtime.Composable
-@@ -26,2 +32,5 @@
  import androidx.compose.runtime.CompositionLocalProvider
 +import androidx.compose.runtime.getValue
 +import androidx.compose.runtime.mutableStateOf
