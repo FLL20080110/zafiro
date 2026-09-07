@@ -91,7 +91,7 @@ class IncomingMessageNotificationService : NotificationListenerService() {
             text = text,
             postedAtMs = statusBarNotification.postTime,
             systemReplyAvailable = replyHandleId != null,
-            sensitive = isSensitiveMessage(text),
+            sensitive = isSensitiveMessageContent(text),
             replyHandleId = replyHandleId,
         )
 
@@ -113,41 +113,63 @@ class IncomingMessageNotificationService : NotificationListenerService() {
         }
     }
 
-    /**
-     * Conservative local-only sensitive classifier for chat auto-reply safety.
-     * False positives are acceptable here because this flag only blocks automation.
-     */
-    private fun isSensitiveMessage(text: String): Boolean {
-        val normalized = text.lowercase()
-        if (SENSITIVE_KEYWORDS.any(normalized::contains)) return true
-
-        // Common 4-8 digit verification/OTP formats. Keep this deterministic and local.
-        return OTP_PATTERN.containsMatchIn(normalized)
-    }
-
     private companion object {
         val SUPPORTED_CHAT_PACKAGES = setOf(
             "com.tencent.mm",
             "com.tencent.mobileqq",
             "com.tencent.tim",
         )
-
-        val SENSITIVE_KEYWORDS = listOf(
-            "验证码",
-            "校验码",
-            "动态码",
-            "支付密码",
-            "登录密码",
-            "交易密码",
-            "银行卡",
-            "收款码",
-            "付款码",
-            "otp",
-            "verification code",
-            "one-time password",
-            "password",
-        )
-
-        val OTP_PATTERN = Regex("(?:^|\\D)\\d{4,8}(?:\\D|$)")
     }
 }
+
+/**
+ * Conservative local-only classifier used before any message body is handed to a model.
+ * False positives are preferable to allowing automated replies around credentials or money.
+ */
+internal fun isSensitiveMessageContent(text: String): Boolean {
+    val normalized = text.lowercase()
+    if (SENSITIVE_MESSAGE_KEYWORDS.any(normalized::contains)) return true
+
+    // Common verification/OTP formats.
+    if (MESSAGE_OTP_PATTERN.containsMatchIn(normalized)) return true
+
+    // Long numeric identifiers are commonly bank cards/account numbers. This intentionally starts
+    // at 12 digits so ordinary phone numbers are not blocked solely for being numeric.
+    return MESSAGE_LONG_NUMBER_PATTERN.containsMatchIn(normalized)
+}
+
+private val SENSITIVE_MESSAGE_KEYWORDS = listOf(
+    "验证码",
+    "校验码",
+    "动态码",
+    "支付密码",
+    "登录密码",
+    "交易密码",
+    "银行卡",
+    "卡号",
+    "账户",
+    "账号",
+    "转账",
+    "汇款",
+    "付款",
+    "收款",
+    "收款码",
+    "付款码",
+    "支付",
+    "身份证",
+    "密钥",
+    "口令",
+    "otp",
+    "verification code",
+    "one-time password",
+    "password",
+    "passcode",
+    "pin code",
+    "api key",
+    "access token",
+    "refresh token",
+    "secret key",
+)
+
+private val MESSAGE_OTP_PATTERN = Regex("(?:^|\\D)\\d{4,8}(?:\\D|$)")
+private val MESSAGE_LONG_NUMBER_PATTERN = Regex("(?:^|\\D)\\d{12,19}(?:\\D|$)")
