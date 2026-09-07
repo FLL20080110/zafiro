@@ -4,6 +4,7 @@ import com.niki914.store.StoreDescriptorRegistry
 import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.settings.MemoryMutationResult
 import com.niki914.zafiro.settings.RuntimeSettingsGateway
+import com.niki914.zafiro.settings.model.LlmProtocol
 import com.niki914.zafiro.settings.model.RuntimeBuiltinToolSetting
 import com.niki914.zafiro.settings.model.RuntimeCustomPyTool
 import com.niki914.zafiro.settings.model.RuntimeExecutionRule
@@ -62,7 +63,11 @@ class XRepoRuntimeGateway(
             },
             apiKey = credential?.accessToken ?: active?.apiKey.orEmpty(),
             model = active?.model.orEmpty(),
-            protocol = active?.protocol.orEmpty(),
+            protocol = if (managedOAuth) {
+                LlmProtocol.OpenAiResponses.wireId
+            } else {
+                active?.protocol.orEmpty()
+            },
             headers = runtimeHeaders,
             proxy = active?.proxy.orEmpty(),
             prompt = doc.prompt,
