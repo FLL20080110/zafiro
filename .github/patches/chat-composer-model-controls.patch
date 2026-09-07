@@ -55,7 +55,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
 +    var modelMenuExpanded by remember { mutableStateOf(false) }
  
-@@ -402,2 +423,31 @@
+@@ -402,2 +423,34 @@
          trailingContent = {
 -            CompositionLocalProvider(LocalContentColor provides contentColor) {
 +            Row(verticalAlignment = Alignment.CenterVertically) {
@@ -91,7 +91,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +                    Icon(Icons.Default.AttachFile, contentDescription = "上传文件")
 +                }
 +                CompositionLocalProvider(LocalContentColor provides contentColor) {
-@@ -424,5 +474,6 @@
+@@ -424,6 +477,7 @@
                          )
                      }
                  }
