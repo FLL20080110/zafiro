@@ -2,7 +2,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 index 708cfc7..0000000 100644
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
-@@ -14,11 +14,17 @@ import androidx.compose.foundation.text.selection.SelectionContainer
+@@ -14,13 +14,21 @@ import androidx.compose.foundation.text.selection.SelectionContainer
  import androidx.compose.material.icons.Icons
  import androidx.compose.material.icons.automirrored.filled.CallSplit
 +import androidx.compose.material.icons.filled.ArrowDropDown
@@ -180,7 +180,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 index 8aeb3c5..0000000 100644
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
-@@ -1,6 +1,10 @@
+@@ -1,5 +1,8 @@
  package com.niki914.zafiro.app.ui.content
  
  import android.content.ClipData
@@ -197,7 +197,7 @@ index 8aeb3c5..0000000 100644
 +import com.niki914.zafiro.repo.XRepo
  import com.niki914.zafiro.repo.UpdateCheckHolder
  import kotlinx.coroutines.delay
-@@ -118,6 +124,46 @@ fun HomePageContent(
+@@ -118,3 +124,43 @@ fun HomePageContent(
      val latestOnConversationSelectionConsumed by rememberUpdatedState(
          onConversationSelectionConsumed
      )
@@ -229,9 +229,7 @@ index 8aeb3c5..0000000 100644
 +        modelSwitchScope.launch {
 +            val resolver = context.contentResolver
 +            val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-+                ?.use { cursor ->
-+                    if (cursor.moveToFirst()) cursor.getString(0) else null
-+                }
++                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 +                ?.takeIf { it.isNotBlank() }
 +                ?: "attachment.txt"
 +            val result = runCatching {
@@ -244,17 +242,13 @@ index 8aeb3c5..0000000 100644
 +            result.onSuccess { fileText ->
 +                val prefix = latestViewModel.uiStateFlow.value.input.trimEnd()
 +                val attachment = "[附件: $name]\n```\n$fileText\n```"
-+                latestViewModel.sendIntent(
-+                    HomeChatIntent.InputChanged(
-+                        if (prefix.isBlank()) attachment else "$prefix\n\n$attachment"
-+                    )
-+                )
++                latestViewModel.sendIntent(HomeChatIntent.InputChanged(if (prefix.isBlank()) attachment else "$prefix\n\n$attachment"))
 +            }.onFailure { error ->
 +                Toast.makeText(context, error.message ?: "附件读取失败", Toast.LENGTH_LONG).show()
 +            }
 +        }
 +    }
-@@ -250,6 +296,22 @@ fun HomePageContent(
+@@ -250,3 +296,19 @@ fun HomePageContent(
          onInputChange = { value ->
              viewModel.sendIntent(HomeChatIntent.InputChanged(value))
          },
@@ -275,16 +269,13 @@ index 8aeb3c5..0000000 100644
 +        onUploadClick = {
 +            uploadLauncher.launch(arrayOf("text/*", "application/json", "application/xml"))
 +        },
-         onSendClick = {
-@@ -513,6 +575,10 @@ private fun HomePageContentBody(
-     isAtBottom: Boolean,
+@@ -513,2 +575,6 @@ private fun HomePageContentBody(
      onContentTap: () -> Unit,
      onInputChange: (String) -> Unit,
 +    modelOptions: List<ChatModelOption>,
 +    activeModelId: String?,
 +    onModelSelect: (String) -> Unit,
 +    onUploadClick: () -> Unit,
-     onSendClick: () -> Unit,
 @@ -611,6 +677,10 @@ private fun HomePageContentBody(
                  onStopClick = onStopClick,
                  isGenerating = uiState.isGenerating,
