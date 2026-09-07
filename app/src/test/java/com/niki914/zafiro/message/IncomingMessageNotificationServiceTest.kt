@@ -69,6 +69,20 @@ class IncomingMessageNotificationServiceTest {
         assertFalse(IncomingMessageReplyRegistry.isHandleAvailable(handle))
     }
 
+    @Test
+    fun sensitiveContentBlocksCredentialsPaymentsAndLongAccountNumbers() {
+        assertTrue(isSensitiveMessageContent("验证码 482193，请勿告诉他人"))
+        assertTrue(isSensitiveMessageContent("把付款码发我一下"))
+        assertTrue(isSensitiveMessageContent("Please send your access token"))
+        assertTrue(isSensitiveMessageContent("卡号是 6222021234567890123"))
+    }
+
+    @Test
+    fun ordinaryChatIsNotMarkedSensitive() {
+        assertFalse(isSensitiveMessageContent("今晚八点一起吃饭吗？"))
+        assertFalse(isSensitiveMessageContent("Call me at 13800138000 when you arrive"))
+    }
+
     private fun registerReplyHandle(notificationKey: String): String? {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val pendingIntent = PendingIntent.getBroadcast(
