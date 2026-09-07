@@ -10,6 +10,7 @@ import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
 import com.niki914.zafiro.message.MessageAssistantCoordinator
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
 import com.niki914.zafiro.repo.SecurityAuditPersistence
 import com.niki914.zafiro.repo.SensitiveAppSettings
 import com.niki914.zafiro.repo.UpdateCheckHolder
@@ -33,6 +34,7 @@ class App : Application() {
         //（否则 ContextProvider 从未 provide，PyRuntime.warmUp 会永远挂起）
         if (isPythonWorkerProcess()) return
         ContextProvider.provide(applicationContext)
+        OpenAiAuthHolder.init(applicationContext)
         XRepo.init(this.applicationContext)
         ConversationRepo.init(this.applicationContext)
         // Restore and persist the minimized audit snapshot outside the security decision path.
