@@ -54,6 +54,24 @@ object IncomingMessageReplyRegistry {
         entries.entries.removeIf { it.value.notificationKey == key }
     }
 
+    /**
+     * Checks whether a previously advertised system-reply capability is still live.
+     *
+     * This is intentionally non-consuming. The coordinator uses it after asynchronous model work to
+     * suppress stale suggestions whose source notification was replaced/removed while generation
+     * was in flight. Dispatch still atomically consumes the handle and performs all policy checks.
+     */
+    internal fun isHandleAvailable(handleId: String?): Boolean {
+        val id = handleId?.takeIf(String::isNotBlank) ?: return false
+        val entry = entries[id] ?: return false
+        val ageMs = SystemClock.elapsedRealtime() - entry.createdAtElapsedMs
+        if (ageMs < 0L || ageMs > HANDLE_TTL_MS) {
+            entries.remove(id, entry)
+            return false
+        }
+        return true
+    }
+
     /** Automatic replies require the full auto-reply allowlist policy. */
     suspend fun send(message: IncomingChatMessage, replyText: String): Result<Unit> {
         val decision = MessageAssistantSettings.evaluate(message)
