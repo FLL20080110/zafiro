@@ -32,8 +32,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
 +    val modelMenuExpanded = remember { androidx.compose.runtime.mutableStateOf(false) }
  
-@@ -402,2 +414,36 @@
-         trailingContent = {
+@@ -403,1 +415,35 @@
 -            CompositionLocalProvider(LocalContentColor provides contentColor) {
 +            Row(verticalAlignment = Alignment.CenterVertically) {
 +                Box {
@@ -70,7 +69,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatCompone
 +                    Text("上传")
 +                }
 +                CompositionLocalProvider(LocalContentColor provides contentColor) {
-@@ -424,6 +468,7 @@
+@@ -424,6 +470,7 @@
                          )
                      }
                  }
