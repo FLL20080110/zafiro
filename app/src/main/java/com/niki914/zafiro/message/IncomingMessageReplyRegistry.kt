@@ -44,6 +44,15 @@ object IncomingMessageReplyRegistry {
     }
 
     /**
+     * Returns true only for an action that can be registered without RemoteInput ambiguity.
+     *
+     * Notification parsing uses this same predicate as [register], so an earlier malformed action
+     * cannot hide a later valid direct-reply action on OEM/app notifications with multiple actions.
+     */
+    internal fun isRegisterableAction(action: Notification.Action): Boolean =
+        eligibleTextInputs(action).size == 1
+
+    /**
      * Revokes all RemoteInput capabilities derived from a notification that has been removed or
      * replaced. This prevents an old suggestion/agent result from replying through a stale
      * PendingIntent after the source notification is no longer current.
