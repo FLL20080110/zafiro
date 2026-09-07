@@ -1,7 +1,7 @@
 diff --git a/libs/okia/src/main/java/com/niki914/okia/Okia.kt b/libs/okia/src/main/java/com/niki914/okia/Okia.kt
 --- a/libs/okia/src/main/java/com/niki914/okia/Okia.kt
 +++ b/libs/okia/src/main/java/com/niki914/okia/Okia.kt
-@@ -3,6 +3,7 @@ import com.niki914.okia.conversation.Conversation
+@@ -3,5 +3,6 @@ import com.niki914.okia.conversation.Conversation
  import com.niki914.okia.conversation.SessionSnapshot
  import com.niki914.okia.event.TurnEvent
 +import com.niki914.okia.message.ContentBlock
