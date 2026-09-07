@@ -5,6 +5,7 @@ import android.app.RemoteInput
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import com.niki914.zafiro.repo.MessageAssistantSettings
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -126,6 +127,9 @@ object IncomingMessageReplyRegistry {
     fun clear() {
         entries.clear()
     }
+
+    @VisibleForTesting
+    internal fun hasHandleForTest(handleId: String): Boolean = entries.containsKey(handleId)
 
     private fun eligibleTextInputs(action: Notification.Action): List<RemoteInput> =
         action.remoteInputs.orEmpty()

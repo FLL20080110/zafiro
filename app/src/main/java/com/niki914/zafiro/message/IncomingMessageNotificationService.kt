@@ -13,6 +13,25 @@ import android.service.notification.StatusBarNotification
  */
 class IncomingMessageNotificationService : NotificationListenerService() {
 
+    override fun onListenerConnected() {
+        // Capabilities belong to the currently connected listener instance only. Do not let a
+        // reconnect resurrect handles captured before Android re-bound the notification service.
+        IncomingMessageReplyRegistry.clear()
+        super.onListenerConnected()
+    }
+
+    override fun onListenerDisconnected() {
+        // Pending notification reply handles are ephemeral capabilities. Once listener state is no
+        // longer authoritative, fail closed instead of retaining handles until their normal TTL.
+        IncomingMessageReplyRegistry.clear()
+        super.onListenerDisconnected()
+    }
+
+    override fun onDestroy() {
+        IncomingMessageReplyRegistry.clear()
+        super.onDestroy()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         val statusBarNotification = sbn ?: return
         val packageName = statusBarNotification.packageName.orEmpty()
