@@ -2,10 +2,16 @@ package com.niki914.zafiro.app.ui.content
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.niki914.uikit.infra.component.settings.SettingsPageSpec
@@ -28,12 +34,13 @@ import java.util.Date
 @Composable
 fun SecurityAuditSettingsContent() {
     val events by SecurityAuditLog.events.collectAsState()
+    var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     val clearLabel = stringResource(R.string.security_audit_clear)
     val pageChromeContribution = remember(clearLabel) {
         PageChromeContribution(
             rightAction = TopBarActionSpec(
                 icon = Icons.Default.Delete,
-                onClick = SecurityAuditLog::clear,
+                onClick = { showClearConfirmation = true },
                 contentDescription = clearLabel,
             ),
         )
@@ -41,6 +48,29 @@ fun SecurityAuditSettingsContent() {
     RegisterPageChrome(pageChromeContribution)
 
     SecurityAuditSettingsContentBody(events = events.asReversed())
+
+    if (showClearConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text(stringResource(R.string.security_audit_clear_confirm_title)) },
+            text = { Text(stringResource(R.string.security_audit_clear_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearConfirmation = false
+                        SecurityAuditLog.clear()
+                    },
+                ) {
+                    Text(stringResource(R.string.security_audit_clear_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmation = false }) {
+                    Text(stringResource(R.string.security_audit_clear_cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
