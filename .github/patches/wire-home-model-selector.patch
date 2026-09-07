@@ -1,7 +1,7 @@
 diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 --- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
 +++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
-@@ -150,6 +150,22 @@ fun HomePageContent(
+@@ -150,6 +150,25 @@ fun HomePageContent(
      )
      val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)
      val uiState by viewModel.uiStateFlow.collectAsState()
@@ -27,7 +27,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
      val density = LocalDensity.current
      val focusManager = LocalFocusManager.current
      val keyboardController = LocalSoftwareKeyboardController.current
-@@ -309,6 +325,18 @@ fun HomePageContent(
+@@ -309,6 +328,19 @@ fun HomePageContent(
          onStopClick = {
              viewModel.sendIntent(HomeChatIntent.StopGenerating)
          },
@@ -47,7 +47,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
          onComposerFocusChanged = { focused ->
              isComposerFocused = focused
          },
-@@ -526,6 +554,9 @@ private fun HomePageContentBody(
+@@ -526,6 +558,9 @@ private fun HomePageContentBody(
      onInputChange: (String) -> Unit,
      onSendClick: () -> Unit,
      onStopClick: () -> Unit,
@@ -57,7 +57,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
      onComposerFocusChanged: (Boolean) -> Unit,
      onReGenerate: (Long) -> Unit,
      onFork: (Long) -> Unit,
-@@ -610,6 +641,9 @@ private fun HomePageContentBody(
+@@ -610,6 +645,9 @@ private fun HomePageContentBody(
                  onSendClick = onSendClick,
                  onStopClick = onStopClick,
                  isGenerating = uiState.isGenerating,
