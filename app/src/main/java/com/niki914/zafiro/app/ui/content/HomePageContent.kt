@@ -137,6 +137,25 @@ fun HomePageContent(
     )
     val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)
     val uiState by viewModel.uiStateFlow.collectAsState()
+    var modelOptions by remember { mutableStateOf<List<ChatModelOption>>(emptyList()) }
+    var activeModelId by remember { mutableStateOf<String?>(null) }
+    val modelSwitchScope = rememberCoroutineScope()
+    LaunchedEffect(viewModel) {
+        runCatching { com.niki914.zafiro.repo.XRepo.llmConfigs.document() }
+            .onSuccess { document ->
+                modelOptions = document.configs.map { config ->
+                    ChatModelOption(
+                        id = config.id,
+                        label = config.name.ifBlank { config.model },
+                        model = config.model,
+                    )
+                }
+                activeModelId = document.activeId
+            }
+            .onFailure { throwable ->
+                com.niki914.logging.Logger.w("niki914_nexus_HomePage", "load model configs failed: ${throwable.message}")
+            }
+    }
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -296,6 +315,19 @@ fun HomePageContent(
         },
         onStopClick = {
             viewModel.sendIntent(HomeChatIntent.StopGenerating)
+        },
+        modelOptions = modelOptions,
+        activeModelId = activeModelId,
+        onModelSelect = { configId ->
+            if (!uiState.isGenerating && configId != activeModelId) {
+                modelSwitchScope.launch {
+                    runCatching { com.niki914.zafiro.repo.XRepo.llmConfigs.setActive(configId) }
+                        .onSuccess { activeModelId = configId }
+                        .onFailure { throwable ->
+                            com.niki914.logging.Logger.w("niki914_nexus_HomePage", "activate model config failed: ${throwable.message}")
+                        }
+                }
+            }
         },
         onComposerFocusChanged = { focused ->
             isComposerFocused = focused
@@ -517,6 +549,9 @@ private fun HomePageContentBody(
     onInputChange: (String) -> Unit,
     onSendClick: () -> Unit,
     onStopClick: () -> Unit,
+    modelOptions: List<ChatModelOption>,
+    activeModelId: String?,
+    onModelSelect: (String) -> Unit,
     onComposerFocusChanged: (Boolean) -> Unit,
     onReGenerate: (Long) -> Unit,
     onFork: (Long) -> Unit,
@@ -609,6 +644,9 @@ private fun HomePageContentBody(
                 onSendClick = onSendClick,
                 onStopClick = onStopClick,
                 isGenerating = uiState.isGenerating,
+                modelOptions = modelOptions,
+                activeModelId = activeModelId,
+                onModelSelect = onModelSelect,
                 maxLines = 10,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
