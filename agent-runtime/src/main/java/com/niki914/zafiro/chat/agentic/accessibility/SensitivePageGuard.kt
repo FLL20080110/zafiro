@@ -92,11 +92,11 @@ object SensitivePageGuard {
 
         if (roots.isNotEmpty()) {
             for (root in roots.take(MAX_WINDOWS_TO_SCAN)) {
-                if (isApplicationOverlay(root)) {
+                if (isThirdPartyOverlayWindow(root)) {
                     return Decision(
                         blocked = true,
                         kind = Kind.OVERLAY,
-                        reasonCode = "APPLICATION_OVERLAY_WINDOW",
+                        reasonCode = "THIRD_PARTY_OVERLAY_WINDOW",
                     )
                 }
                 val decision = evaluate(root)
@@ -111,25 +111,40 @@ object SensitivePageGuard {
             null
         } ?: return Decision(blocked = false)
 
-        if (isApplicationOverlay(root)) {
+        if (isThirdPartyOverlayWindow(root)) {
             return Decision(
                 blocked = true,
                 kind = Kind.OVERLAY,
-                reasonCode = "APPLICATION_OVERLAY_WINDOW",
+                reasonCode = "THIRD_PARTY_OVERLAY_WINDOW",
             )
         }
 
         return evaluate(root)
     }
 
-    private fun isApplicationOverlay(root: AccessibilityNodeInfo): Boolean {
+    /**
+     * AccessibilityWindowInfo does not expose WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY.
+     * Third-party application overlays are surfaced through accessibility as system windows on
+     * supported Android versions, so classify non-platform TYPE_SYSTEM windows conservatively.
+     * Known platform-owned windows are excluded to avoid pausing on SystemUI/permission surfaces.
+     */
+    private fun isThirdPartyOverlayWindow(root: AccessibilityNodeInfo): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         return try {
-            root.window?.type == AccessibilityWindowInfo.TYPE_APPLICATION_OVERLAY
+            val window = root.window ?: return false
+            if (window.type != AccessibilityWindowInfo.TYPE_SYSTEM) return false
+            val packageName = root.packageName?.toString()?.lowercase().orEmpty()
+            if (packageName.isEmpty()) return false
+            !isPlatformWindowPackage(packageName)
         } catch (_: Throwable) {
             false
         }
     }
+
+    private fun isPlatformWindowPackage(packageName: String): Boolean =
+        packageName == "android" ||
+            packageName.endsWith(".systemui") ||
+            packageName.contains("permissioncontroller")
 
     internal fun evaluate(root: AccessibilityNodeInfo): Decision {
         val foregroundPackage = root.packageName?.toString()
