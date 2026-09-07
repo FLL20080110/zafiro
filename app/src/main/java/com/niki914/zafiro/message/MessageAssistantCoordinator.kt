@@ -197,6 +197,17 @@ object MessageAssistantCoordinator {
             return
         }
 
+        // If this notification originally advertised RemoteInput but its one-shot capability has
+        // disappeared while the model was generating, the source notification was removed,
+        // replaced, expired, consumed, or the listener was reset. Do not surface a stale generated
+        // result as though the old system reply were still current.
+        if (message.systemReplyAvailable &&
+            !IncomingMessageReplyRegistry.isHandleAvailable(message.replyHandleId)
+        ) {
+            Logger.i(LOG_TAG, "stale notification reply source dropped before side effects")
+            return
+        }
+
         var autoSent = false
         if (currentDecision == MessageAssistantSettings.Decision.AUTO_REPLY_ALLOWED) {
             if (!allowAutoReplyNow(message)) {
@@ -227,7 +238,8 @@ object MessageAssistantCoordinator {
 
         pruneSuggestions()
         val suggestionId = UUID.randomUUID().toString()
-        val manualSendAvailable = !autoSent && message.systemReplyAvailable
+        val manualSendAvailable = !autoSent && message.systemReplyAvailable &&
+            IncomingMessageReplyRegistry.isHandleAvailable(message.replyHandleId)
         val fallback = ChatAccessibilityFallback.snapshot.value
         val accessibilityFillAvailable = currentPolicy.accessibilityFallbackEnabled &&
             !autoSent && !message.systemReplyAvailable &&
