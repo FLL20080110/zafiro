@@ -2,6 +2,8 @@ package com.niki914.zafiro.message
 
 /** Pure policy used to decide whether an Accessibility suggestion may still target the UI. */
 object AccessibilityFallbackPolicy {
+    const val MAX_SNAPSHOT_AGE_MS = 10_000L
+
     val supportedPackages = setOf(
         "com.tencent.mm",
         "com.tencent.mobileqq",
@@ -20,6 +22,11 @@ object AccessibilityFallbackPolicy {
             expectedSessionId > 0L &&
             currentSessionId == expectedSessionId &&
             editableInputCount == 1
+    }
+
+    fun isFreshSnapshot(updatedAtElapsedMs: Long, nowElapsedMs: Long): Boolean {
+        if (updatedAtElapsedMs <= 0L || nowElapsedMs < updatedAtElapsedMs) return false
+        return nowElapsedMs - updatedAtElapsedMs <= MAX_SNAPSHOT_AGE_MS
     }
 
     fun isEditableCandidate(
