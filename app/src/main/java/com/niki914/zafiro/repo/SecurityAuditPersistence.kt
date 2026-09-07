@@ -11,6 +11,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -29,11 +31,18 @@ object SecurityAuditPersistence {
     private const val FILE_NAME = "security_audit_v1.json"
     private const val MAX_TEXT_CHARS = 160
 
+    // All durable reads/writes, including explicit user clear, share one lock. This prevents a
+    // stale collector write from racing after the user has requested deletion and recreating an
+    // older snapshot on disk.
+    private val fileMutex = Mutex()
+
     fun start(scope: CoroutineScope, context: Context) {
         val appContext = context.applicationContext
         scope.launch {
-            val atomicFile = AtomicFile(File(appContext.noBackupFilesDir, FILE_NAME))
-            val restored = runCatching { readSnapshot(atomicFile) }
+            val atomicFile = auditFile(appContext)
+            val restored = runCatching {
+                fileMutex.withLock { withContext(Dispatchers.IO) { readSnapshot(atomicFile) } }
+            }
                 .onFailure { Logger.w(LOG_TAG, "restore failed ${it.message}") }
                 .getOrDefault(emptyList())
             if (restored.isNotEmpty()) {
@@ -42,8 +51,10 @@ object SecurityAuditPersistence {
 
             SecurityAuditLog.events.collectLatest { events ->
                 runCatching {
-                    withContext(Dispatchers.IO) {
-                        writeSnapshot(atomicFile, events.takeLast(SecurityAuditLog.MAX_EVENTS))
+                    fileMutex.withLock {
+                        withContext(Dispatchers.IO) {
+                            writeSnapshot(atomicFile, events.takeLast(SecurityAuditLog.MAX_EVENTS))
+                        }
                     }
                 }.onFailure {
                     Logger.w(LOG_TAG, "persist failed ${it.message}")
@@ -51,6 +62,24 @@ object SecurityAuditPersistence {
             }
         }
     }
+
+    /**
+     * Durably clears the audit snapshot after the in-memory log has been cleared by the caller.
+     * The shared writer mutex guarantees no older collector snapshot can be written after this
+     * deletion finishes. Writing [] instead of deleting the AtomicFile also leaves an explicit,
+     * parseable empty state if the process terminates immediately afterward.
+     */
+    suspend fun clear(context: Context) {
+        val atomicFile = auditFile(context.applicationContext)
+        fileMutex.withLock {
+            withContext(Dispatchers.IO) {
+                writeSnapshot(atomicFile, emptyList())
+            }
+        }
+    }
+
+    private fun auditFile(context: Context): AtomicFile =
+        AtomicFile(File(context.noBackupFilesDir, FILE_NAME))
 
     private fun readSnapshot(file: AtomicFile): List<SecurityAuditEvent> {
         if (!file.baseFile.exists()) return emptyList()
