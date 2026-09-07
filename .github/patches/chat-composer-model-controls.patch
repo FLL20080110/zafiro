@@ -1,0 +1,101 @@
+diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
+--- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
++++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
+@@ -16,2 +16,4 @@
+ import androidx.compose.material.icons.automirrored.filled.CallSplit
++import androidx.compose.material.icons.filled.ArrowDropDown
++import androidx.compose.material.icons.filled.AttachFile
+ import androidx.compose.material.icons.filled.ContentCopy
+@@ -18,2 +20,4 @@
+ import androidx.compose.material.icons.filled.Refresh
++import androidx.compose.material3.DropdownMenu
++import androidx.compose.material3.DropdownMenuItem
+ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+@@ -20,2 +24,3 @@
+ import androidx.compose.material3.Icon
++import androidx.compose.material3.IconButton
+ import androidx.compose.material3.LoadingIndicator
+@@ -24,1 +29,2 @@
+ import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
+@@ -26,2 +32,5 @@
+ import androidx.compose.runtime.CompositionLocalProvider
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
+@@ -368,6 +377,12 @@
+     }
+ }
+ 
++data class ChatModelOption(
++    val id: String,
++    val label: String,
++    val model: String,
++)
++
+ @Composable
+ @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+ fun LiquidChatComposer(
+@@ -377,6 +392,10 @@
+     isGenerating: Boolean,
+     modifier: Modifier = Modifier,
+     maxLines: Int = Int.MAX_VALUE,
++    modelOptions: List<ChatModelOption> = emptyList(),
++    activeModelId: String? = null,
++    onModelSelect: (String) -> Unit = {},
++    onUploadClick: () -> Unit = {},
+ ) {
+     val canSend = !isGenerating && value.isNotBlank()
+     val buttonEnabled = isGenerating || canSend
+@@ -388,4 +407,6 @@
+     } else {
+         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+     }
++    val activeModel = modelOptions.firstOrNull { it.id == activeModelId }
++    var modelMenuExpanded by remember { mutableStateOf(false) }
+ 
+@@ -402,2 +423,34 @@
+         trailingContent = {
+-            CompositionLocalProvider(LocalContentColor provides contentColor) {
++            Row(verticalAlignment = Alignment.CenterVertically) {
++                Box {
++                    TextButton(
++                        onClick = { modelMenuExpanded = true },
++                        enabled = !isGenerating && modelOptions.isNotEmpty(),
++                    ) {
++                        Text((activeModel?.label ?: activeModel?.model ?: "模型").take(14))
++                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
++                    }
++                    DropdownMenu(
++                        expanded = modelMenuExpanded,
++                        onDismissRequest = { modelMenuExpanded = false },
++                    ) {
++                        modelOptions.forEach { option ->
++                            DropdownMenuItem(
++                                text = {
++                                    Text(
++                                        if (option.model.isBlank() || option.label == option.model) option.label
++                                        else "${option.label} · ${option.model}"
++                                    )
++                                },
++                                onClick = {
++                                    modelMenuExpanded = false
++                                    if (option.id != activeModelId) onModelSelect(option.id)
++                                },
++                            )
++                        }
++                    }
++                }
++                IconButton(onClick = onUploadClick, enabled = !isGenerating) {
++                    Icon(Icons.Default.AttachFile, contentDescription = "上传文件")
++                }
++                CompositionLocalProvider(LocalContentColor provides contentColor) {
+@@ -424,6 +477,7 @@
+                         )
+                     }
+                 }
++            }
+         },
+     )
+ }
