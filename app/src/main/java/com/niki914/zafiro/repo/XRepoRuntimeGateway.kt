@@ -27,6 +27,10 @@ class XRepoRuntimeGateway(
         }
         val doc = repo.llmConfigs.document()
         val active = doc.activeConfig()
+        OpenAiCredentialGuard.requireUsable(
+            endpoint = active?.endpoint.orEmpty(),
+            apiKey = active?.apiKey.orEmpty(),
+        )
         val memories = repo.agents.memoriesFor(agentId)
         return RuntimeLlmConfig(
             provider = active?.provider.orEmpty(),
