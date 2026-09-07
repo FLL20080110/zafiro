@@ -1,6 +1,6 @@
 --- a/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
 +++ b/libs/okia/src/main/java/com/niki914/okia/protocol/OpenAIResponsesProtocol.kt
-@@ -1,8 +1,24 @@
+@@ -159,8 +159,24 @@
 -    private fun buildRequestBody(snapshot: RequestSnapshot, history: List<Message>): JsonObject =
 -        buildJsonObject {
 +    private fun buildRequestBody(snapshot: RequestSnapshot, history: List<Message>): JsonObject {
@@ -28,7 +28,7 @@
              })
              snapshot.systemPrompt?.let { put("instructions", it) }
              put("stream", true)
-@@ -20,6 +36,7 @@
+@@ -178,6 +194,7 @@
                  put("tools", buildJsonArray { snapshot.tools.forEach { add(convertTool(it)) } })
              }
          }
@@ -36,7 +36,7 @@
  
      /**
       * 消息 → Responses input item 列表。一条助手消息可能产出多个 item：
-@@ -28,7 +45,11 @@
+@@ -186,7 +203,11 @@
       * reasoning item（不把其文本拼进 message，避免重复）；无 payload 或前缀
       * 不认识的思考块继续按明文合并进文本（DeepSeek 网关形态）。
       */
@@ -49,7 +49,7 @@
          is Message.User -> listOf(buildJsonObject {
              put("role", "user")
              put("content", userContent(snapshot, message.content))
-@@ -38,7 +59,9 @@
+@@ -196,7 +217,9 @@
              val items = mutableListOf<JsonObject>()
              val textBlocks = message.message.content.filterIsInstance<ContentBlock.Text>()
              val thinkingBlocks = message.message.content.filterIsInstance<ContentBlock.Thinking>()
@@ -60,7 +60,7 @@
              // 带合法 OpenAI reasoning payload 的块 → 原样回放 reasoning items（保序）
              thinkingBlocks.forEach { block ->
                  extractReasoningItems(block.opaquePayload)?.forEach { items += it }
-@@ -70,28 +93,34 @@
+@@ -228,28 +251,34 @@
              items
          }
  
