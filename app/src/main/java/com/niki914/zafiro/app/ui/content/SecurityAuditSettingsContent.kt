@@ -10,8 +10,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.niki914.uikit.infra.component.settings.SettingsPageSpec
@@ -28,11 +30,15 @@ import com.niki914.zafiro.chat.agentic.shell.SecurityAuditEvent
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
 import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
 import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+import com.niki914.zafiro.repo.SecurityAuditPersistence
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 @Composable
 fun SecurityAuditSettingsContent() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val events by SecurityAuditLog.events.collectAsState()
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     val clearLabel = stringResource(R.string.security_audit_clear)
@@ -59,6 +65,12 @@ fun SecurityAuditSettingsContent() {
                     onClick = {
                         showClearConfirmation = false
                         SecurityAuditLog.clear()
+                        // Clear durable storage as part of the same user action. The persistence
+                        // layer serializes this with its collector so an older snapshot cannot
+                        // race back onto disk after the user has requested deletion.
+                        scope.launch {
+                            runCatching { SecurityAuditPersistence.clear(context.applicationContext) }
+                        }
                     },
                 ) {
                     Text(stringResource(R.string.security_audit_clear_confirm_action))
