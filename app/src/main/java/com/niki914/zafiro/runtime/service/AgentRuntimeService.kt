@@ -33,6 +33,7 @@ import com.niki914.zafiro.runtime.ipc.IAgentRuntimeService
 import com.niki914.zafiro.runtime.ipc.IAgentStoreService
 import com.niki914.zafiro.runtime.ipc.IRenderFrameCallback
 import com.niki914.zafiro.runtime.ipc.RenderFrame
+import com.niki914.zafiro.settings.RuntimeCapabilityRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import com.niki914.zafiro.app.R as AppR
 
@@ -61,6 +63,14 @@ class AgentRuntimeService : Service() {
 
     override fun onDestroy() {
         activeTurn.getAndSet(null)?.job?.cancel()
+        xposedActivationTokens.forEach { (token, recipient) ->
+            try {
+                token.unlinkToDeath(recipient, 0)
+            } catch (_: Exception) {
+            }
+        }
+        xposedActivationTokens.clear()
+        RuntimeCapabilityRegistry.setXposedActivationConfirmed(false)
         scope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -68,6 +78,8 @@ class AgentRuntimeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val activeTurn = AtomicReference<ActiveTurn?>(null)
+    private val xposedActivationTokens =
+        ConcurrentHashMap<IBinder, IBinder.DeathRecipient>()
 
     private data class ActiveTurn(
         val callback: IRenderFrameCallback,
@@ -121,6 +133,36 @@ class AgentRuntimeService : Service() {
         override fun getStoreBinder(): IBinder? {
             if (!validateCaller()) return null
             return storeStub
+        }
+
+        override fun reportXposedActivation(hostPackage: String?, token: IBinder?) {
+            val host = hostPackage ?: return
+            val liveToken = token ?: return
+            if (!isTrustedXposedActivationCaller(host)) {
+                Logger.w(LOG_TAG, "live Xposed activation report rejected")
+                return
+            }
+
+            val recipient = IBinder.DeathRecipient {
+                xposedActivationTokens.remove(liveToken)
+                val active = xposedActivationTokens.isNotEmpty()
+                RuntimeCapabilityRegistry.setXposedActivationConfirmed(active)
+                Logger.i(LOG_TAG, "live Xposed activation changed active=$active")
+            }
+            if (xposedActivationTokens.putIfAbsent(liveToken, recipient) != null) return
+
+            try {
+                liveToken.linkToDeath(recipient, 0)
+            } catch (_: Exception) {
+                xposedActivationTokens.remove(liveToken, recipient)
+                RuntimeCapabilityRegistry.setXposedActivationConfirmed(
+                    xposedActivationTokens.isNotEmpty(),
+                )
+                return
+            }
+
+            RuntimeCapabilityRegistry.setXposedActivationConfirmed(true)
+            Logger.i(LOG_TAG, "live Xposed activation confirmed")
         }
 
         override fun submit(query: String?, callback: IRenderFrameCallback?) {
@@ -452,6 +494,13 @@ class AgentRuntimeService : Service() {
             } catch (_: Exception) {
             }
         }
+    }
+
+    private fun isTrustedXposedActivationCaller(hostPackage: String): Boolean {
+        if (hostPackage !in HostApp.packageNames) return false
+        val callingUid = Binder.getCallingUid()
+        val packages = packageManager.getPackagesForUid(callingUid) ?: return false
+        return hostPackage in packages
     }
 
     private fun validateCaller(): Boolean {

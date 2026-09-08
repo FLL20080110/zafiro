@@ -22,6 +22,7 @@ import com.niki914.zafiro.app.ui.model.ThemeController
 import com.niki914.zafiro.app.ui.model.ThemeMode
 import com.niki914.zafiro.app.ui.nav.ThemeSettingsPage
 import com.niki914.zafiro.app.ui.nav.ZafiroPage
+import com.niki914.zafiro.repo.PrivacyModeSettings
 import com.niki914.zafiro.repo.XRepo
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -33,6 +34,7 @@ import kotlinx.coroutines.runBlocking
 private const val LANGUAGE_ROW_ID = "general.language"
 private const val APPEARANCE_ROW_ID = "general.appearance"
 private const val LOAD_LAST_ROW_ID = "general.load_last"
+private const val PRIVACY_MODE_ROW_ID = "general.privacy_mode"
 private const val IDLE_TIMEOUT_ROW_ID = "general.idle_timeout"
 private const val RETRY_ATTEMPTS_ROW_ID = "general.retry_attempts"
 
@@ -69,6 +71,7 @@ fun GeneralSettingsContent(onPush: (ZafiroPage) -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var savedLanguageTag by rememberSaveable { mutableStateOf<String?>(null) }
     var loadLastConversation by rememberSaveable { mutableStateOf(false) }
+    var privacyModeEnabled by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var idleTimeoutSeconds by rememberSaveable { mutableStateOf(60L) }
     var retryMaxAttempts by rememberSaveable { mutableStateOf(3) }
@@ -79,6 +82,7 @@ fun GeneralSettingsContent(onPush: (ZafiroPage) -> Unit = {}) {
         runCatching {
             savedLanguageTag = XRepo.languageTag()
             loadLastConversation = XRepo.loadLastConversationOnStartup()
+            privacyModeEnabled = PrivacyModeSettings.enabled()
             idleTimeoutSeconds = XRepo.llmIdleTimeoutSeconds()
             retryMaxAttempts = XRepo.llmRetryMaxAttempts()
         }.onFailure {
@@ -111,6 +115,12 @@ fun GeneralSettingsContent(onPush: (ZafiroPage) -> Unit = {}) {
                         id = LOAD_LAST_ROW_ID,
                         title = stringResource(R.string.ui_settings_general_load_last_conversation),
                         checked = loadLastConversation,
+                    ),
+                    SettingsRowSpec.Toggle(
+                        id = PRIVACY_MODE_ROW_ID,
+                        title = stringResource(R.string.privacy_mode_title),
+                        summary = stringResource(R.string.privacy_mode_summary),
+                        checked = privacyModeEnabled,
                     ),
                     SettingsRowSpec.Navigation(
                         id = IDLE_TIMEOUT_ROW_ID,
@@ -147,6 +157,24 @@ fun GeneralSettingsContent(onPush: (ZafiroPage) -> Unit = {}) {
                         loadLastConversation = action.checked
                         scope.launch {
                             XRepo.setLoadLastConversationOnStartup(action.checked)
+                        }
+                    } else if (action.id == PRIVACY_MODE_ROW_ID) {
+                        val requested = action.checked
+                        privacyModeEnabled = requested
+                        scope.launch {
+                            runCatching {
+                                PrivacyModeSettings.setEnabled(requested)
+                            }.onSuccess { persisted ->
+                                privacyModeEnabled = persisted
+                            }.onFailure {
+                                Logger.w(
+                                    "niki914_nexus_GeneralSettings",
+                                    "privacy mode update failed ${it.message}",
+                                )
+                                privacyModeEnabled = runCatching {
+                                    PrivacyModeSettings.enabled()
+                                }.getOrDefault(!requested)
+                            }
                         }
                     }
 

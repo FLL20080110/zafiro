@@ -1,0 +1,120 @@
+package com.niki914.zafiro.repo
+
+import com.niki914.store.StoreDescriptorRegistry
+import com.niki914.zafiro.chat.agentic.accessibility.SensitiveAppPolicyRegistry
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/**
+ * Persistent user policy for apps that should pause AI screen interaction.
+ *
+ * Package names are persisted locally in APP_STATE and mirrored into the runtime's
+ * process-local registry. No package list is sent to a model or network service.
+ *
+ * Policy mutations are serialized across persistence, runtime mirroring and audit emission so
+ * concurrent UI toggles cannot leave the process-local registry older than the durable state.
+ * Mutations run in a process-lifetime repository scope: leaving the settings page may cancel the
+ * UI await, but cannot cancel a policy write that the user already requested.
+ */
+object SensitiveAppSettings {
+    private const val MAX_PACKAGE_NAME_LENGTH = 255
+    private const val MAX_SENSITIVE_PACKAGES = 512
+
+    private val policyMutex = Mutex()
+    private val policyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    suspend fun packages(): Set<String> = policyMutex.withLock {
+        readPackages()
+    }
+
+    suspend fun setPaused(packageName: String, paused: Boolean): Set<String> {
+        val normalized = normalizePackageName(packageName) ?: return packages()
+
+        // This Deferred is owned by policyScope rather than the calling UI scope. Cancellation of
+        // a Composable/page after the toggle therefore stops only its await, not the durable write.
+        return policyScope.async {
+            policyMutex.withLock {
+                var updated: Set<String> = emptySet()
+                var changed = false
+                XRepo.updateJson(StoreDescriptorRegistry.APP_STATE_ID) { json ->
+                    val current = AppStateSettingsCodec.parse(json)
+                    val values = decode(current.sensitiveAppPackagesCsv).toMutableSet()
+                    val wasPaused = normalized in values
+                    if (paused) {
+                        if (wasPaused || values.size < MAX_SENSITIVE_PACKAGES) values += normalized
+                    } else {
+                        values -= normalized
+                    }
+                    changed = wasPaused != (normalized in values)
+                    updated = values.toSortedSet()
+                    AppStateSettingsCodec.encode(
+                        current.copy(sensitiveAppPackagesCsv = encode(updated))
+                    )
+                }
+                syncRuntime(updated)
+                if (changed) {
+                    // Deliberately do not put the app label or package name into historical audit data.
+                    SecurityAuditLog.recordSensitiveAppPolicyChange(paused)
+                }
+                updated
+            }
+        }.await()
+    }
+
+    suspend fun reloadRuntime(): Set<String> = policyMutex.withLock {
+        val values = readPackages()
+        syncRuntime(values)
+        values
+    }
+
+    private suspend fun readPackages(): Set<String> {
+        val state = AppStateSettingsCodec.parse(
+            XRepo.readJson(StoreDescriptorRegistry.APP_STATE_ID)
+        )
+        return decode(state.sensitiveAppPackagesCsv)
+    }
+
+    private fun syncRuntime(values: Set<String>) {
+        SensitiveAppPolicyRegistry.replaceAll(
+            values.associateWith { SensitiveAppPolicyRegistry.Policy.PAUSE_AI }
+        )
+    }
+
+    internal fun decode(csv: String): Set<String> {
+        return csv.split(',')
+            .asSequence()
+            .mapNotNull(::normalizePackageName)
+            .distinct()
+            .take(MAX_SENSITIVE_PACKAGES)
+            .toSortedSet()
+    }
+
+    internal fun encode(values: Set<String>): String {
+        return values.asSequence()
+            .mapNotNull(::normalizePackageName)
+            .distinct()
+            .sorted()
+            .take(MAX_SENSITIVE_PACKAGES)
+            .joinToString(",")
+    }
+
+    internal fun normalizePackageName(value: String): String? {
+        val packageName = value.trim()
+        if (packageName.isEmpty() || packageName.length > MAX_PACKAGE_NAME_LENGTH) return null
+        val segments = packageName.split('.')
+        if (segments.any { segment ->
+                segment.isEmpty() ||
+                    !(segment.first().isLetter() || segment.first() == '_') ||
+                    segment.any { char -> !(char.isLetterOrDigit() || char == '_') }
+            }
+        ) {
+            return null
+        }
+        return packageName
+    }
+}

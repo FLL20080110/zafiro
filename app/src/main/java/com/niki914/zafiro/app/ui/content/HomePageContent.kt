@@ -2,6 +2,8 @@ package com.niki914.zafiro.app.ui.content
 
 import android.content.ClipData
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -77,6 +79,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.niki914.store.XIpcBridge
+import com.niki914.okia.message.ContentBlock
 import com.niki914.uikit.base.BaseTheme
 import com.niki914.uikit.infra.ConfirmationLiquidDialog
 import com.niki914.uikit.infra.LiquidDialog
@@ -102,6 +105,8 @@ import com.niki914.zafiro.app.ui.model.HomeToolStatus
 import com.niki914.zafiro.app.ui.model.ToolPresentation
 import com.niki914.zafiro.app.ui.nav.TextTitle
 import com.niki914.zafiro.app.ui.nav.TopBarActionSpec
+import com.niki914.zafiro.chat.agentic.UserImageSaver
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.repo.UpdateCheckHolder
 import kotlinx.coroutines.delay
@@ -136,6 +141,44 @@ fun HomePageContent(
     )
     val latestOnActiveConversationChanged by rememberUpdatedState(onActiveConversationChanged)
     val uiState by viewModel.uiStateFlow.collectAsState()
+    var modelOptions by remember { mutableStateOf<List<ChatModelOption>>(emptyList()) }
+    var activeModelId by remember { mutableStateOf<String?>(null) }
+    val modelSwitchScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var selectedImage by remember { mutableStateOf<ContentBlock.Image?>(null) }
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri)
+            if (mimeType == null || !mimeType.startsWith("image/")) {
+                Toast.makeText(context, "仅支持图片附件", Toast.LENGTH_SHORT).show()
+            } else {
+                val path = UserImageSaver(context).saveFromUri(uri)
+                if (path != null) {
+                    selectedImage = ContentBlock.Image(path = path, mimeType = mimeType)
+                } else {
+                    Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    LaunchedEffect(viewModel) {
+        runCatching { com.niki914.zafiro.repo.XRepo.llmConfigs.document() }
+            .onSuccess { document ->
+                modelOptions = document.configs.map { config ->
+                    ChatModelOption(
+                        id = config.id,
+                        label = config.name.ifBlank { config.model },
+                        model = config.model,
+                    )
+                }
+                activeModelId = document.activeId
+            }
+            .onFailure { throwable ->
+                com.niki914.logging.Logger.w("niki914_nexus_HomePage", "load model configs failed: ${throwable.message}")
+            }
+    }
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -206,6 +249,9 @@ fun HomePageContent(
         if (shouldFollowBottom) {
             listState.scrollToItem(uiState.turns.size)
         }
+    }
+    LaunchedEffect(uiState.currentConversationId) {
+        selectedImage = null
     }
     LaunchedEffect(selectedConversationId) {
         val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
@@ -291,10 +337,32 @@ fun HomePageContent(
         onSendClick = {
             dismissInputFocus()
             shouldFollowBottom = true
-            viewModel.sendIntent(HomeChatIntent.Send)
+            val image = selectedImage
+            if (image == null) {
+                viewModel.sendIntent(HomeChatIntent.Send)
+            } else {
+                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
+                selectedImage = null
+            }
         },
         onStopClick = {
             viewModel.sendIntent(HomeChatIntent.StopGenerating)
+        },
+        hasAttachment = selectedImage != null,
+        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
+        onRemoveAttachment = { selectedImage = null },
+        modelOptions = modelOptions,
+        activeModelId = activeModelId,
+        onModelSelect = { configId ->
+            if (!uiState.isGenerating && configId != activeModelId) {
+                modelSwitchScope.launch {
+                    runCatching { com.niki914.zafiro.repo.XRepo.llmConfigs.setActive(configId) }
+                        .onSuccess { activeModelId = configId }
+                        .onFailure { throwable ->
+                            com.niki914.logging.Logger.w("niki914_nexus_HomePage", "activate model config failed: ${throwable.message}")
+                        }
+                }
+            }
         },
         onComposerFocusChanged = { focused ->
             isComposerFocused = focused
@@ -362,17 +430,45 @@ private fun ToolPermissionDialog() {
     LaunchedEffect(pending?.id) {
         val request = pending ?: return@LaunchedEffect
         if (MainActivity.isResumed) return@LaunchedEffect
-        val command = request.command.let { if (it.length > 80) it.take(80) + "…" else it }
         XIpcBridge.postNotification(
             context = context,
             title = context.getString(R.string.tool_permission_notification_title),
-            content = context.getString(R.string.tool_permission_notification_content, command),
+            content = context.getString(R.string.tool_permission_notification_content),
             uri = null,
             client = null,
         )
     }
 
     val request = pending ?: return
+    val riskLevelLabel = when (request.riskLevel) {
+        SecurityRiskLevel.INFO -> stringResource(R.string.tool_permission_risk_info)
+        SecurityRiskLevel.LOW -> stringResource(R.string.tool_permission_risk_low)
+        SecurityRiskLevel.MEDIUM -> stringResource(R.string.tool_permission_risk_medium)
+        SecurityRiskLevel.HIGH -> stringResource(R.string.tool_permission_risk_high)
+        SecurityRiskLevel.CRITICAL -> stringResource(R.string.tool_permission_risk_critical)
+    }
+    val temporaryGrantMillis = ToolPermissionCoordinator.normalizedTemporaryGrantMillis(
+        request.temporaryGrantMillis
+    )
+    val temporaryGrantLabel = temporaryGrantMillis?.let { duration ->
+        val durationText = when {
+            duration % (24L * 60L * 60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_days,
+                duration / (24L * 60L * 60L * 1000L),
+            )
+            duration % (60L * 60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_hours, duration / (60L * 60L * 1000L)
+            )
+            duration % (60L * 1000L) == 0L -> stringResource(
+                R.string.tool_permission_duration_minutes, duration / (60L * 1000L)
+            )
+            duration % 1000L == 0L -> stringResource(
+                R.string.tool_permission_duration_seconds, duration / 1000L
+            )
+            else -> stringResource(R.string.tool_permission_duration_millis, duration)
+        }
+        stringResource(R.string.tool_permission_allow_temporary, durationText)
+    }
     LiquidDialog(
         visible = true,
         onDismissRequest = { ToolPermissionCoordinator.respond(request.id, allowed = false) },
@@ -392,6 +488,36 @@ private fun ToolPermissionDialog() {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = stringResource(R.string.tool_permission_risk_level, riskLevelLabel),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (request.riskLevel >= SecurityRiskLevel.HIGH) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                request.riskReason?.takeIf { it.isNotBlank() }?.let { reason ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_risk_reason, reason),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                request.commandExplanation.takeIf { it.isNotBlank() }?.let { explanation ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_command_explanation, explanation),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                request.worstCaseImpact.takeIf { it.isNotBlank() }?.let { impact ->
+                    Text(
+                        text = stringResource(R.string.tool_permission_worst_case_impact, impact),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Text(
                     text = request.command,
                     style = MaterialTheme.typography.bodySmall,
@@ -423,6 +549,15 @@ private fun ToolPermissionDialog() {
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             )
+            temporaryGrantLabel?.let { label ->
+                MaterialTintLiquidButton(
+                    text = label,
+                    onClick = { ToolPermissionCoordinator.respondTemporary(request.id) },
+                    modifier = Modifier.weight(1f),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
             MaterialTintLiquidButton(
                 text = stringResource(R.string.tool_permission_allow),
                 onClick = { ToolPermissionCoordinator.respond(request.id, allowed = true) },
@@ -449,6 +584,12 @@ private fun HomePageContentBody(
     onInputChange: (String) -> Unit,
     onSendClick: () -> Unit,
     onStopClick: () -> Unit,
+    hasAttachment: Boolean = false,
+    onUploadClick: () -> Unit = {},
+    onRemoveAttachment: () -> Unit = {},
+    modelOptions: List<ChatModelOption>,
+    activeModelId: String?,
+    onModelSelect: (String) -> Unit,
     onComposerFocusChanged: (Boolean) -> Unit,
     onReGenerate: (Long) -> Unit,
     onFork: (Long) -> Unit,
@@ -540,7 +681,13 @@ private fun HomePageContentBody(
                 onValueChange = onInputChange,
                 onSendClick = onSendClick,
                 onStopClick = onStopClick,
+                hasAttachment = hasAttachment,
+                onUploadClick = onUploadClick,
+                onRemoveAttachment = onRemoveAttachment,
                 isGenerating = uiState.isGenerating,
+                modelOptions = modelOptions,
+                activeModelId = activeModelId,
+                onModelSelect = onModelSelect,
                 maxLines = 10,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1003,6 +1150,9 @@ private fun HomePageContentPreview() {
                 onInputChange = {},
                 onSendClick = {},
                 onStopClick = {},
+                modelOptions = emptyList(),
+                activeModelId = null,
+                onModelSelect = {},
                 onComposerFocusChanged = {},
                 onReGenerate = { },
                 onFork = { },

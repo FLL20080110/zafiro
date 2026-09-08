@@ -22,6 +22,7 @@ import com.niki914.okia.tooling.DefaultToolRegistry
 import com.niki914.okia.tooling.ToolDescriptor
 import com.niki914.okia.tooling.ToolKind
 import com.niki914.okia.tooling.ToolRegistry
+import com.niki914.okia.transport.modelProxyHttpEngine
 import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.xposed.api.util.LockState
 import com.niki914.zafiro.chat.agentic.AndroidImageLoader
@@ -31,10 +32,15 @@ import com.niki914.zafiro.chat.agentic.PromptComposer
 import com.niki914.zafiro.chat.agentic.PromptComposerInput
 import com.niki914.zafiro.chat.agentic.ToolManager
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
+import com.niki914.zafiro.settings.RuntimeCapabilityRegistry
 import com.niki914.zafiro.settings.RuntimeEnvironment
 import com.niki914.zafiro.settings.model.LlmProtocol
 import kotlinx.coroutines.CancellationException
@@ -207,6 +213,7 @@ object LLMController {
             baseSystemPrompt = llmConfig.prompt,
             finalSystemPrompt = llmConfig.prompt,
             proxy = llmConfig.proxy,
+            headers = llmConfig.headers,
             idleTimeoutSeconds = llmConfig.idleTimeoutSeconds,
             retryMaxAttempts = llmConfig.retryMaxAttempts,
         )
@@ -218,6 +225,8 @@ object LLMController {
             endpoint = configWithoutRuntimePrompt.endpoint
             apiKey = configWithoutRuntimePrompt.apiKey
             model = configWithoutRuntimePrompt.model
+            headers = configWithoutRuntimePrompt.headers
+            httpEngine = modelProxyHttpEngine(configWithoutRuntimePrompt.proxy)
             // 热更新超时/重试策略：实例复用时也要跟随设置变化，否则改设置要冷启才生效
             idleTimeoutSeconds = configWithoutRuntimePrompt.idleTimeoutSeconds
                 ?: NO_IDLE_TIMEOUT_SECONDS
@@ -243,6 +252,7 @@ object LLMController {
         val prompt = promptComposer.compose(
             PromptComposerInput(
                 additionalInstructions = llmConfig.prompt,
+                runtimeCapabilityContext = RuntimeCapabilityRegistry.promptFragment(),
                 memoryItems = buildMemoryItems(llmConfig),
                 tools = resolvedTools,
                 enabledSkills = enabledSkills,
@@ -329,7 +339,27 @@ object LLMController {
     fun stream(
         query: String,
         fromUserInterface: Boolean = false,
+        image: ContentBlock.Image? = null,
     ): Flow<LlmStreamEvent> = channelFlow {
+        // Turn-level sensitive-page gate. Evaluate locally before refresh() so
+        // neither the user query nor any runtime prompt/context can reach a cloud
+        // model while a password, OTP, or payment page is in the foreground.
+        // Leaving the page automatically restores the next turn; no page text is
+        // retained and no background polling is required.
+        val sensitivePage = SensitivePageGuard.evaluateCurrent()
+        if (sensitivePage.blocked) {
+            Logger.w(LOG_TAG, "round blocked by sensitive page kind=${sensitivePage.kind} reason=${sensitivePage.reasonCode}")
+            SecurityAuditLog.record(
+                kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+                riskLevel = SecurityRiskLevel.HIGH,
+                toolName = "llm_turn",
+                policyCode = sensitivePage.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+                reason = "Sensitive context blocked before LLM turn execution.",
+            )
+            send(LlmStreamEvent.Error(message = SensitivePageGuard.blockedMessage(sensitivePage), code = null))
+            return@channelFlow
+        }
+
         // 确认型执行规则按来源区分：UI 直连可弹窗；宿主路径默认拒绝（英文错误回给 Agent）
         ToolPermissionCoordinator.canRequestUserConfirmation = fromUserInterface
         try {
@@ -406,8 +436,13 @@ object LLMController {
                 }
                 // 终态以返回值承载（TurnResult）；onEvent 只承担流式中间过程。
                 val result = try {
+                    val userContent = buildList {
+                        add(ContentBlock.Text(effectiveQuery))
+                        image?.let { add(it) }
+                    }
                     state.okia.send(
-                        text = effectiveQuery,
+                        content = userContent,
+                        inputText = effectiveQuery,
                         options = TurnOptions(systemPrompt = state.snapshot.config.finalSystemPrompt),
                     ) { event ->
                         val mapped = LlmStreamEventMapper.map(event, startedAtMs)
@@ -605,6 +640,8 @@ object LLMController {
             this.endpoint = endpoint
             apiKey = config.apiKey
             model = config.model
+            headers = config.headers
+            httpEngine = modelProxyHttpEngine(config.proxy)
             hooks += killToolResourcesHook
             // null = 不超时（General Settings 提供「不限时」选项）
             idleTimeoutSeconds = config.idleTimeoutSeconds ?: NO_IDLE_TIMEOUT_SECONDS

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="message_assistant_recent_title">最近识别到的会话</string>
+    <string name="message_assistant_recent_empty">暂未识别到会话。收到微信、QQ 或 TIM 通知后，会话会仅在本次进程内显示在这里。</string>
+    <string name="message_assistant_recent_summary">打开后，该会话可在“自动回复”模式下通过本地策略检查；敏感消息、隐私模式和无系统回复能力仍会继续阻断。</string>
+</resources>

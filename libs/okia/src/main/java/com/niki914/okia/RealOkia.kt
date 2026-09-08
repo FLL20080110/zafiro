@@ -119,7 +119,32 @@ internal class RealOkia(
         text: String,
         options: TurnOptions?,
         onEvent: suspend (TurnEvent) -> Unit
+    ): TurnResult = sendUserContent(
+        content = listOf(ContentBlock.Text(text)),
+        inputText = text,
+        options = options,
+        onEvent = onEvent,
+    )
+
+    override suspend fun send(
+        content: List<ContentBlock>,
+        inputText: String,
+        options: TurnOptions?,
+        onEvent: suspend (TurnEvent) -> Unit
+    ): TurnResult = sendUserContent(
+        content = content.toList(),
+        inputText = inputText,
+        options = options,
+        onEvent = onEvent,
+    )
+
+    private suspend fun sendUserContent(
+        content: List<ContentBlock>,
+        inputText: String,
+        options: TurnOptions?,
+        onEvent: suspend (TurnEvent) -> Unit,
     ): TurnResult {
+        require(content.isNotEmpty()) { "user content must not be empty" }
         // 回合状态原子预留（T2 竞态整改）：check + 追加 User + 启动 loop +
         // activeTurn 赋值全部在同一临界区内完成——并发 send / rewind / update /
         // export / close / refreshMcpTools 无法在「check 通过」与「activeTurn
@@ -129,10 +154,10 @@ internal class RealOkia(
         mutex.withLock {
             check(!closed) { "Okia is closed" }
             check(activeTurn == null) { "another turn is already active" }
-            val turnStartEntry = tree.append(Message.User(listOf(ContentBlock.Text(text))))
+            val turnStartEntry = tree.append(Message.User(content))
             publish()
 
-            val request = buildLoopRequest(text, options)
+            val request = buildLoopRequest(inputText, options)
             val job = turnScope.async {
                 dependencies.agentLoop.run(request) { event -> handleEvent(event, onEvent) }
             }

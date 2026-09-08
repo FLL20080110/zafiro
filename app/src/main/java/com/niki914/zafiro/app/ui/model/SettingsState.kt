@@ -88,6 +88,9 @@ private fun settingsSections(): List<SettingsSectionDefinition> {
             groups = listOf(
                 ZafiroSettingsGroup.Takeover,
                 ZafiroSettingsGroup.ExecutionRules,
+                ZafiroSettingsGroup.MessageAssistant,
+                ZafiroSettingsGroup.SensitiveApps,
+                ZafiroSettingsGroup.SecurityAudit,
             ),
         ),
         SettingsSectionDefinition(

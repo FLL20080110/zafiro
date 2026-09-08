@@ -19,6 +19,9 @@ import com.niki914.zafiro.chat.agentic.shell.TerminalReadMode
 import com.niki914.zafiro.chat.agentic.shell.TerminalReadOutcome
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
 import com.niki914.zafiro.chat.agentic.shell.TerminalToolResponse
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionRequest
+import com.niki914.zafiro.chat.agentic.shell.ToolPermissionResponse
 import com.niki914.zafiro.chat.agentic.shell.TerminalToolResponse.stderrText
 import com.niki914.zafiro.chat.agentic.shell.TerminalToolResponse.stdoutText
 import kotlinx.coroutines.CancellationException
@@ -32,6 +35,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.util.UUID
 
 class TerminalBuiltin(
     private val safetyPolicy: ShellCommandSafetyPolicy = ShellCommandSafetyPolicy(),
@@ -97,6 +101,44 @@ class TerminalBuiltin(
     private suspend fun handleCommand(args: TerminalArgs): String {
         val command = args.requireCommand()
         val timeoutSec = args.resolveTimeout()
+
+        if (args.backend == Backend.LOCAL) {
+            val identity = args.identity ?: DEFAULT_LOCAL_IDENTITY
+            if (identity == "root" || identity == "shizuku") {
+                val response = ToolPermissionCoordinator.confirm(
+                    ToolPermissionRequest(
+                        id = UUID.randomUUID().toString(),
+                        toolName = name,
+                        command = command,
+                        matchedRuleName = "Privileged identity: $identity",
+                        temporaryGrantMillis = 5 * 60 * 1000L,
+                    )
+                )
+                when (response) {
+                    ToolPermissionResponse.ALLOWED -> Unit
+                    ToolPermissionResponse.DENIED_BY_USER -> {
+                        return TerminalToolResponse.policyBlocked(
+                            com.niki914.zafiro.chat.agentic.shell.ShellCommandPolicyDecision(
+                                allowed = false,
+                                code = "PRIVILEGED_IDENTITY_DENIED",
+                                reason = "The user denied $identity terminal execution.",
+                                matchedRuleName = "Privileged identity: $identity",
+                            )
+                        )
+                    }
+                    ToolPermissionResponse.DENIED_UNAVAILABLE -> {
+                        return TerminalToolResponse.policyBlocked(
+                            com.niki914.zafiro.chat.agentic.shell.ShellCommandPolicyDecision(
+                                allowed = false,
+                                code = "PRIVILEGED_IDENTITY_CONFIRM_UNAVAILABLE",
+                                reason = "$identity execution requires explicit user confirmation.",
+                                matchedRuleName = "Privileged identity: $identity",
+                            )
+                        )
+                    }
+                }
+            }
+        }
         val decision = safetyPolicy.evaluate(command, toolName = name)
         if (!decision.allowed) {
             return TerminalToolResponse.policyBlocked(decision)

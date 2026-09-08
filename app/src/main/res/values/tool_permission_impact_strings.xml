@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tool_permission_worst_case_impact">最坏影响：%1$s</string>
+</resources>

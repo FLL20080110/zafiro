@@ -1,11 +1,16 @@
 package com.niki914.zafiro.chat.agentic.buildin.impl
 
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
+import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
 import com.niki914.zafiro.chat.agentic.buildin.TextToolResult
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditKind
+import com.niki914.zafiro.chat.agentic.shell.SecurityAuditLog
+import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+import kotlinx.coroutines.delay
 
 /**
  * TextResultBuiltinTool for shell-based screen interaction.
@@ -26,6 +31,8 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
                 "Operations: tap(x,y), long_click(x,y), swipe(start_x,start_y,end_x,end_y,duration), " +
                 "key(code). Coordinates are in screen pixels from the most recently returned screen tree. " +
                 "Every successful operation returns the updated tree automatically.\n\n" +
+                "Password, OTP, and payment pages are protected: AI screen interaction pauses " +
+                "until the user leaves the sensitive page.\n\n" +
                 "Key codes: BACK=4, HOME=3, RECENTS=187, NOTIFICATIONS=83, QUICK_SETTINGS=84.\n\n" +
                 "wait_mode \"stable\" (default) waits for the UI to settle; \"delay\" waits a fixed " +
                 "wait_ms (use for search/refresh).\n\n" +
@@ -34,6 +41,7 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
     override val inputSchemaJson: String? get() = SCREEN_SHELL_SCHEMA
 
     override suspend fun invokeText(request: BuiltinToolRequest): TextToolResult {
+        sensitivePageBlock()?.let { return it }
         AccessibilityController.ensurePointerShown()
 
         val args = parseArguments(request.argumentsJson).getOrElse { error ->
@@ -71,22 +79,15 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
         }
     }
 
-    /**
-     * Executes a shell operation, then captures the updated screen according to [waitMode].
-     *
-     * When the shell operation itself fails, the screen is captured to provide a fresh
-     * tree for the LLM to retry with. For [SHELL_TIMEOUT] and [SHELL_SESSION_LOST] codes
-     * the action may have partially executed, so the message notes this uncertainty.
-     *
-     * Returns a [TextToolResult] — success with the YAML tree, or failure with
-     * an optional payload.
-     */
     private suspend fun executeShellAndCapture(
         waitMode: String,
         waitMs: Long,
         executor: suspend () -> BuiltinToolResult,
     ): TextToolResult {
+        sensitivePageBlock()?.let { return it }
         val result = executor()
+        sensitivePageBlock()?.let { return it }
+
         if (!result.ok) {
             val captureResult = AccessibilityController.captureScreen()
             val enhanced = when (result.code) {
@@ -104,13 +105,17 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
             return assembleActionResult(enhanced, captureResult)
         }
         val capture = if (waitMode == "delay") {
-            AccessibilityController.captureScreenAfterDelay(waitMs)
+            delay(waitMs)
+            sensitivePageBlock()?.let { return it }
+            AccessibilityController.captureScreen()
         } else {
             AccessibilityController.waitForStable(waitMs)
         }
+
+        sensitivePageBlock()?.let { return it }
         return capture.fold(
             onSuccess = { snapshot -> TextToolResult.success(snapshot.yaml) },
-            onFailure = { e ->
+            onFailure = {
                 TextToolResult.failure(
                     code = ScreenOperationError.CAPTURE_FAILED_AFTER_ACTION.code,
                     message = "The shell action may have succeeded, but the updated screen " +
@@ -118,6 +123,22 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
                             "to retry the action.",
                 )
             },
+        )
+    }
+
+    private fun sensitivePageBlock(): TextToolResult? {
+        val decision = SensitivePageGuard.evaluateCurrent()
+        if (!decision.blocked) return null
+        SecurityAuditLog.record(
+            kind = SecurityAuditKind.SENSITIVE_CONTEXT_BLOCKED,
+            riskLevel = SecurityRiskLevel.HIGH,
+            toolName = name,
+            policyCode = decision.reasonCode ?: "SENSITIVE_PAGE_BLOCKED",
+            reason = "Sensitive context blocked before shell screen access.",
+        )
+        return TextToolResult.failure(
+            code = "SENSITIVE_PAGE_BLOCKED",
+            message = SensitivePageGuard.blockedMessage(decision),
         )
     }
 

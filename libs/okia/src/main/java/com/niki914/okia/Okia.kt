@@ -3,6 +3,7 @@ package com.niki914.okia
 import com.niki914.okia.conversation.Conversation
 import com.niki914.okia.conversation.SessionSnapshot
 import com.niki914.okia.event.TurnEvent
+import com.niki914.okia.message.ContentBlock
 import com.niki914.okia.loop.AgentLoop
 import com.niki914.okia.loop.RealAgentLoop
 import com.niki914.okia.loop.TurnResult
@@ -45,6 +46,28 @@ interface Okia {
         options: TurnOptions? = null,
         onEvent: suspend (TurnEvent) -> Unit
     ): TurnResult
+
+    /**
+     * 提交结构化用户输入。默认实现保持第三方/测试 Okia 实现的源码兼容：
+     * 仅纯文本块回退到旧 [send]；包含图片等非文本块时要求实现显式支持。
+     * [inputText] 仅用于 TurnStarted 等事件/日志语义，真实模型输入来自 [content]。
+     */
+    suspend fun send(
+        content: List<ContentBlock>,
+        inputText: String,
+        options: TurnOptions? = null,
+        onEvent: suspend (TurnEvent) -> Unit
+    ): TurnResult {
+        require(content.isNotEmpty()) { "user content must not be empty" }
+        require(content.all { it is ContentBlock.Text }) {
+            "structured user content is not supported by this Okia implementation"
+        }
+        val text = content
+            .filterIsInstance<ContentBlock.Text>()
+            .joinToString(separator = "") { it.text }
+            .ifEmpty { inputText }
+        return send(text = text, options = options, onEvent = onEvent)
+    }
 
     // 取消当前回合；kill-then-stop（先杀工具资源再取消 job）
     suspend fun stop(): Unit

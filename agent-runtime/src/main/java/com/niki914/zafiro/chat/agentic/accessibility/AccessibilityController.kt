@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
+import android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
@@ -595,7 +596,7 @@ object AccessibilityController {
 
         if (node.isClickable) sb.append(", tap: true")
         if (node.isLongClickable) sb.append(", hold: true")
-        if (node.isEditable) sb.append(", edit: true")
+        if (node.supportsTextEditing()) sb.append(", edit: true")
         if (node.isScrollable) sb.append(", scroll: true")
         if (node.isChecked) sb.append(", checked: true")
 
@@ -767,19 +768,39 @@ object AccessibilityController {
             return BuiltinToolResult.success("action ${action.name} performed via accessibility")
         }
 
-        // Fallback to shell for non-SET_TEXT actions
-        return if (action != NodeAction.SET_TEXT) {
-            val shellResult = executeShellAction(node, index, action)
-            if (shellResult.ok) {
-                BuiltinToolResult.success("accessibility fallback: ${shellResult.message}")
-            } else {
-                shellResult
+        if (action == NodeAction.SET_TEXT) {
+            if (!node.supportsTextEditing()) {
+                return BuiltinToolResult.failure(
+                    "SET_TEXT_FAILED",
+                    "The selected node does not expose editable text semantics."
+                )
             }
-        } else {
-            BuiltinToolResult.failure(
+
+            // Some custom chat inputs accept ACTION_SET_TEXT only after they are
+            // explicitly focused/clicked. Focus first, then click to request the
+            // IME, and retry ACTION_SET_TEXT. This keeps Unicode text in the
+            // accessibility path instead of leaking it through shell `input text`.
+            serviceInstance!!.performAction(node, ACTION_FOCUS, null)
+            delay(80L)
+            serviceInstance!!.performAction(node, ACTION_CLICK, null)
+            delay(120L)
+            if (serviceInstance!!.performAction(node, ACTION_SET_TEXT, text)) {
+                return BuiltinToolResult.success(
+                    "action SET_TEXT performed via accessibility after focus retry"
+                )
+            }
+
+            return BuiltinToolResult.failure(
                 "SET_TEXT_FAILED",
-                "set_text failed via accessibility, no shell fallback available"
+                "set_text failed after accessibility focus/click retry"
             )
+        }
+
+        val shellResult = executeShellAction(node, index, action)
+        return if (shellResult.ok) {
+            BuiltinToolResult.success("accessibility fallback: ${shellResult.message}")
+        } else {
+            shellResult
         }
     }
 

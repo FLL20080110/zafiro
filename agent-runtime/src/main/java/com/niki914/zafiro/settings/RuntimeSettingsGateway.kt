@@ -6,10 +6,13 @@ import com.niki914.zafiro.settings.model.RuntimeExecutionRule
 import com.niki914.zafiro.settings.model.RuntimeLlmConfig
 import com.niki914.zafiro.settings.model.RuntimeLoadedSkill
 import com.niki914.zafiro.settings.model.RuntimeMcpServer
+import com.niki914.zafiro.settings.model.RuntimePrivacyPolicy
 import com.niki914.zafiro.settings.model.RuntimeSkillMetadata
 import com.niki914.zafiro.settings.model.RuntimeToolValidation
 
 interface RuntimeSettingsGateway {
+    suspend fun readPrivacyPolicy(): RuntimePrivacyPolicy = RuntimePrivacyPolicy()
+
     suspend fun readLlmConfig(agentId: String = "main"): RuntimeLlmConfig
 
     suspend fun listEnabledSkills(): List<RuntimeSkillMetadata> = emptyList()

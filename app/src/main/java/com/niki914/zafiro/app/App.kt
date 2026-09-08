@@ -9,6 +9,10 @@ import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
+import com.niki914.zafiro.message.MessageAssistantCoordinator
+import com.niki914.zafiro.openai.auth.OpenAiAuthHolder
+import com.niki914.zafiro.repo.SecurityAuditPersistence
+import com.niki914.zafiro.repo.SensitiveAppSettings
 import com.niki914.zafiro.repo.UpdateCheckHolder
 import com.niki914.zafiro.repo.XRepo
 import com.niki914.zafiro.runtime.createAppRuntimeBridge
@@ -30,11 +34,18 @@ class App : Application() {
         //（否则 ContextProvider 从未 provide，PyRuntime.warmUp 会永远挂起）
         if (isPythonWorkerProcess()) return
         ContextProvider.provide(applicationContext)
+        OpenAiAuthHolder.init(applicationContext)
         XRepo.init(this.applicationContext)
         ConversationRepo.init(this.applicationContext)
+        // Restore and persist the minimized audit snapshot outside the security decision path.
+        SecurityAuditPersistence.start(applicationScope, this.applicationContext)
         // T3：消息级增量持久化器（观察 LLMController 当前会话快照流，
         // 独立于 UI 生命周期——回合可能在宿主后台跑，ViewModel 已销毁时仍落盘）
         ConversationPersister.start(applicationScope)
+        // Notification-based chat assistance uses an isolated one-shot LLM session and keeps
+        // inbound bodies/generated suggestions in memory only. Local policy gates every model
+        // request and is checked again immediately before any RemoteInput dispatch.
+        MessageAssistantCoordinator.start(applicationScope, applicationContext)
         RuntimeEnvironment.install(createAppRuntimeBridge())
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         DynamicColors.applyToActivitiesIfAvailable(this)
@@ -43,6 +54,10 @@ class App : Application() {
         }
         applicationScope.launch {
             XRepo.tryPutDefaultSettings()
+        }
+        applicationScope.launch {
+            // Restore package-level sensitive-app protection before screen automation is used.
+            SensitiveAppSettings.reloadRuntime()
         }
         applicationScope.launch {
             XRepo.skills.seedDefaults()

@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Binder
 import android.os.DeadObjectException
 import android.os.Handler
 import android.os.IBinder
@@ -48,6 +49,15 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
     private var bound = false
     private var deathRecipient: IBinder.DeathRecipient? = null
     private var retryCount = 0
+
+    private var xposedHostPackage: String? = null
+    private var xposedActivationToken: IBinder? = null
+
+    fun enableXposedActivationReport(hostPackage: String): AgentRuntimeClient {
+        xposedHostPackage = hostPackage
+        xposedActivationToken = Binder()
+        return this
+    }
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -291,6 +301,18 @@ class AgentRuntimeClient(private val context: Context) : AssistantTextSource,
             service = svc
             storeService = svc?.getStoreBinder()?.let { IAgentStoreService.Stub.asInterface(it) }
             this@AgentRuntimeClient.binder = binder
+
+            if (svc != null && xposedHostPackage != null && xposedActivationToken != null) {
+                try {
+                    svc.reportXposedActivation(xposedHostPackage, xposedActivationToken)
+                    Logger.i(LOG_TAG, "live Xposed activation reported")
+                } catch (e: Exception) {
+                    Logger.w(
+                        LOG_TAG,
+                        "live Xposed activation report failed type=${e::class.simpleName}",
+                    )
+                }
+            }
 
             deathRecipient?.let { dr ->
                 binder?.let { b ->

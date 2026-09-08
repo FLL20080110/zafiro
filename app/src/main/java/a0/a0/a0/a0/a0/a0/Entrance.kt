@@ -55,7 +55,7 @@ class Entrance : IXposed() {
 //        HookSideLoader.load(scope, FloatWindowHook(), params)
         scope.launch(Dispatchers.IO) {
             val ctx = ContextProvider.await()
-            val client = AgentRuntimeClient(ctx)
+            val client = AgentRuntimeClient(ctx).enableXposedActivationReport(params.packageName)
             client.connectAndAwait()
             XRepo.init(ctx, XIpcDomainSettingsStore(client))
 
