@@ -2,6 +2,8 @@ package com.niki914.zafiro.app.ui.content
 
 import android.content.ClipData
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -77,6 +79,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.niki914.store.XIpcBridge
+import com.niki914.okia.message.ContentBlock
 import com.niki914.uikit.base.BaseTheme
 import com.niki914.uikit.infra.ConfirmationLiquidDialog
 import com.niki914.uikit.infra.LiquidDialog
@@ -102,6 +105,7 @@ import com.niki914.zafiro.app.ui.model.HomeToolStatus
 import com.niki914.zafiro.app.ui.model.ToolPresentation
 import com.niki914.zafiro.app.ui.nav.TextTitle
 import com.niki914.zafiro.app.ui.nav.TopBarActionSpec
+import com.niki914.zafiro.chat.agentic.UserImageSaver
 import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
 import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
 import com.niki914.zafiro.repo.UpdateCheckHolder
@@ -140,6 +144,25 @@ fun HomePageContent(
     var modelOptions by remember { mutableStateOf<List<ChatModelOption>>(emptyList()) }
     var activeModelId by remember { mutableStateOf<String?>(null) }
     val modelSwitchScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var selectedImage by remember { mutableStateOf<ContentBlock.Image?>(null) }
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri)
+            if (mimeType == null || !mimeType.startsWith("image/")) {
+                Toast.makeText(context, "仅支持图片附件", Toast.LENGTH_SHORT).show()
+            } else {
+                val path = UserImageSaver(context).saveFromUri(uri)
+                if (path != null) {
+                    selectedImage = ContentBlock.Image(path = path, mimeType = mimeType)
+                } else {
+                    Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     LaunchedEffect(viewModel) {
         runCatching { com.niki914.zafiro.repo.XRepo.llmConfigs.document() }
             .onSuccess { document ->
@@ -226,6 +249,9 @@ fun HomePageContent(
         if (shouldFollowBottom) {
             listState.scrollToItem(uiState.turns.size)
         }
+    }
+    LaunchedEffect(uiState.currentConversationId) {
+        selectedImage = null
     }
     LaunchedEffect(selectedConversationId) {
         val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
@@ -549,6 +575,9 @@ private fun HomePageContentBody(
     onInputChange: (String) -> Unit,
     onSendClick: () -> Unit,
     onStopClick: () -> Unit,
+    hasAttachment: Boolean = false,
+    onUploadClick: () -> Unit = {},
+    onRemoveAttachment: () -> Unit = {},
     modelOptions: List<ChatModelOption>,
     activeModelId: String?,
     onModelSelect: (String) -> Unit,
@@ -643,6 +672,9 @@ private fun HomePageContentBody(
                 onValueChange = onInputChange,
                 onSendClick = onSendClick,
                 onStopClick = onStopClick,
+                hasAttachment = hasAttachment,
+                onUploadClick = onUploadClick,
+                onRemoveAttachment = onRemoveAttachment,
                 isGenerating = uiState.isGenerating,
                 modelOptions = modelOptions,
                 activeModelId = activeModelId,

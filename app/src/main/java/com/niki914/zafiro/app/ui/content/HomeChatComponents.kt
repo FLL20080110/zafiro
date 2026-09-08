@@ -390,6 +390,8 @@ fun LiquidChatComposer(
     activeModelId: String? = null,
     onModelSelect: (String) -> Unit = {},
     onUploadClick: () -> Unit = {},
+    hasAttachment: Boolean = false,
+    onRemoveAttachment: () -> Unit = {},
 ) {
     val canSend = !isGenerating && value.isNotBlank()
     val buttonEnabled = isGenerating || canSend
@@ -444,7 +446,15 @@ fun LiquidChatComposer(
                     onClick = onUploadClick,
                     enabled = !isGenerating,
                 ) {
-                    Text("上传")
+                    Text(if (hasAttachment) "更换图片" else "上传")
+                }
+                if (hasAttachment) {
+                    androidx.compose.material3.TextButton(
+                        onClick = onRemoveAttachment,
+                        enabled = !isGenerating,
+                    ) {
+                        Text("移除")
+                    }
                 }
                 CompositionLocalProvider(LocalContentColor provides contentColor) {
                     ActionBarButton(
