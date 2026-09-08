@@ -16,10 +16,12 @@ import javax.crypto.spec.GCMParameterSpec
  * Stores the Clash subscription URL encrypted at rest.
  *
  * The AES key is non-exportable and lives in Android Keystore. Only IV + ciphertext are
- * persisted in the app-private files directory. Callers must never log the returned secret.
+ * persisted in the app-private no-backup directory. Callers must never log the returned secret.
  */
 class ClashSubscriptionSecretStore(context: Context) {
-    private val file = AtomicFile(context.filesDir.resolve(FILE_NAME))
+    // Ciphertext is intentionally excluded from Android Auto Backup. The Keystore key may not
+    // survive a restore to another device, and restoring an undecryptable subscription is useless.
+    private val file = AtomicFile(context.applicationContext.noBackupFilesDir.resolve(FILE_NAME))
 
     @Synchronized
     fun save(subscriptionUrl: String) {
@@ -34,14 +36,15 @@ class ClashSubscriptionSecretStore(context: Context) {
 
         val output = file.startWrite()
         try {
-            DataOutputStream(output).use { data ->
-                data.writeInt(FORMAT_VERSION)
-                data.writeInt(iv.size)
-                data.write(iv)
-                data.writeInt(ciphertext.size)
-                data.write(ciphertext)
-                data.flush()
-            }
+            // Do not close the FileOutputStream before AtomicFile.finishWrite(); finishWrite is
+            // responsible for syncing, closing, and committing the temporary file atomically.
+            val data = DataOutputStream(output)
+            data.writeInt(FORMAT_VERSION)
+            data.writeInt(iv.size)
+            data.write(iv)
+            data.writeInt(ciphertext.size)
+            data.write(ciphertext)
+            data.flush()
             file.finishWrite(output)
         } catch (t: Throwable) {
             file.failWrite(output)
@@ -64,9 +67,15 @@ class ClashSubscriptionSecretStore(context: Context) {
                 require(data.read() == -1) { "Clash 订阅密文包含多余数据" }
 
                 val cipher = Cipher.getInstance(TRANSFORMATION)
-                cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
+                cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    getOrCreateKey(),
+                    GCMParameterSpec(GCM_TAG_BITS, iv),
+                )
                 cipher.doFinal(ciphertext).toString(Charsets.UTF_8).also {
-                    require(it.isNotBlank() && it.length <= MAX_SECRET_CHARS) { "Clash 订阅密文内容无效" }
+                    require(it.isNotBlank() && it.length <= MAX_SECRET_CHARS) {
+                        "Clash 订阅密文内容无效"
+                    }
                 }
             }
         }.getOrElse {
@@ -78,9 +87,16 @@ class ClashSubscriptionSecretStore(context: Context) {
     @Synchronized
     fun clear() {
         file.delete()
+        // Dedicated alias: deleting it gives clear() cryptographic-erasure semantics as well as
+        // deleting the ciphertext. A later save() transparently creates a fresh key.
+        runCatching {
+            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(KEY_ALIAS)
+        }
     }
 
-    fun isConfigured(): Boolean = file.baseFile.exists()
+    /** Returns true only when the stored ciphertext can actually be decrypted and validated. */
+    @Synchronized
+    fun isConfigured(): Boolean = runCatching { read() != null }.getOrDefault(false)
 
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
@@ -105,6 +121,7 @@ class ClashSubscriptionSecretStore(context: Context) {
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "zafiro.clash.subscription.v1"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
+        private const val GCM_TAG_BITS = 128
         private const val FILE_NAME = "clash-subscription.enc"
         private const val FORMAT_VERSION = 1
         private const val MAX_SECRET_CHARS = 8_192
