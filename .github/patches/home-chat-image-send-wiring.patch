@@ -1,0 +1,24 @@
+diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+--- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
++++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+@@ -337,10 +337,19 @@
+         onSendClick = {
+             dismissInputFocus()
+             shouldFollowBottom = true
+-            viewModel.sendIntent(HomeChatIntent.Send)
++            val image = selectedImage
++            if (image == null) {
++                viewModel.sendIntent(HomeChatIntent.Send)
++            } else {
++                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
++                selectedImage = null
++            }
+         },
+         onStopClick = {
+             viewModel.sendIntent(HomeChatIntent.StopGenerating)
+         },
++        hasAttachment = selectedImage != null,
++        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
++        onRemoveAttachment = { selectedImage = null },
+         modelOptions = modelOptions,
+         activeModelId = activeModelId,
