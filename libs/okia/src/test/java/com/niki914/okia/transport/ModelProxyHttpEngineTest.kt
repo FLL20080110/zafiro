@@ -36,6 +36,27 @@ class ModelProxyHttpEngineTest {
     }
 
     @Test
+    fun subscriptionLikePathIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            modelProxyHttpEngine("http://127.0.0.1:7890/subscribe")
+        }
+    }
+
+    @Test
+    fun secretBearingQueryIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            modelProxyHttpEngine("http://127.0.0.1:7890/?token=secret")
+        }
+    }
+
+    @Test
+    fun fragmentIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            modelProxyHttpEngine("http://127.0.0.1:7890/#secret")
+        }
+    }
+
+    @Test
     fun unsupportedSchemeIsRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             modelProxyHttpEngine("https://127.0.0.1:7890")
