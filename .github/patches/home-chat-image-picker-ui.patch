@@ -1,0 +1,118 @@
+diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+--- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
++++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent.kt
+@@ -1,6 +1,8 @@
+ package com.niki914.zafiro.app.ui.content
+ 
+ import android.content.ClipData
+ import android.widget.Toast
++import androidx.activity.compose.rememberLauncherForActivityResult
++import androidx.activity.result.contract.ActivityResultContracts
+ import androidx.compose.animation.AnimatedVisibility
+ import androidx.compose.animation.core.tween
+@@ -77,2 +79,3 @@
+ import com.niki914.store.XIpcBridge
++import com.niki914.okia.message.ContentBlock
+ import com.niki914.uikit.base.BaseTheme
+@@ -101,2 +104,3 @@
++import com.niki914.zafiro.chat.agentic.UserImageSaver
+ import com.niki914.zafiro.chat.agentic.shell.SecurityRiskLevel
+ import com.niki914.zafiro.chat.agentic.shell.ToolPermissionCoordinator
+@@ -137,3 +140,22 @@ fun HomePageContent(
+     var activeModelId by remember { mutableStateOf<String?>(null) }
+     val modelSwitchScope = rememberCoroutineScope()
++    val context = LocalContext.current
++    var selectedImage by remember { mutableStateOf<ContentBlock.Image?>(null) }
++    val imagePicker = rememberLauncherForActivityResult(
++        contract = ActivityResultContracts.OpenDocument(),
++    ) { uri ->
++        if (uri != null) {
++            val mimeType = context.contentResolver.getType(uri)
++            if (mimeType == null || !mimeType.startsWith("image/")) {
++                Toast.makeText(context, "仅支持图片附件", Toast.LENGTH_SHORT).show()
++            } else {
++                val path = UserImageSaver(context).saveFromUri(uri)
++                if (path != null) {
++                    selectedImage = ContentBlock.Image(path = path, mimeType = mimeType)
++                } else {
++                    Toast.makeText(context, "图片读取失败", Toast.LENGTH_SHORT).show()
++                }
++            }
++        }
++    }
+     LaunchedEffect(viewModel) {
+@@ -201,2 +221,5 @@
++    LaunchedEffect(uiState.currentConversationId) {
++        selectedImage = null
++    }
+     LaunchedEffect(selectedConversationId) {
+         val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+@@ -270,11 +293,20 @@
+         onInputChange = { value ->
+             viewModel.sendIntent(HomeChatIntent.InputChanged(value))
+         },
+         onSendClick = {
+             dismissInputFocus()
+             shouldFollowBottom = true
+-            viewModel.sendIntent(HomeChatIntent.Send)
++            val image = selectedImage
++            if (image == null) {
++                viewModel.sendIntent(HomeChatIntent.Send)
++            } else {
++                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
++                selectedImage = null
++            }
+         },
+         onStopClick = {
+             viewModel.sendIntent(HomeChatIntent.StopGenerating)
+         },
++        hasAttachment = selectedImage != null,
++        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
++        onRemoveAttachment = { selectedImage = null },
+@@ -399,6 +431,9 @@
+     onInputChange: (String) -> Unit,
+     onSendClick: () -> Unit,
+     onStopClick: () -> Unit,
++    hasAttachment: Boolean = false,
++    onUploadClick: () -> Unit = {},
++    onRemoveAttachment: () -> Unit = {},
+     modelOptions: List<ChatModelOption>,
+     activeModelId: String?,
+     onModelSelect: (String) -> Unit,
+@@ -471,6 +506,9 @@
+                 onValueChange = onInputChange,
+                 onSendClick = onSendClick,
+                 onStopClick = onStopClick,
++                hasAttachment = hasAttachment,
++                onUploadClick = onUploadClick,
++                onRemoveAttachment = onRemoveAttachment,
+                 isGenerating = uiState.isGenerating,
+                 modelOptions = modelOptions,
+                 activeModelId = activeModelId,
+diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
+--- a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
++++ b/app/src/main/java/com/niki914/zafiro/app/ui/content/HomeChatComponents.kt
+@@ -348,4 +348,6 @@ fun LiquidChatComposer(
+     activeModelId: String? = null,
+     onModelSelect: (String) -> Unit = {},
+     onUploadClick: () -> Unit = {},
++    hasAttachment: Boolean = false,
++    onRemoveAttachment: () -> Unit = {},
+ ) {
+@@ -402,7 +404,15 @@ fun LiquidChatComposer(
+                 androidx.compose.material3.TextButton(
+                     onClick = onUploadClick,
+                     enabled = !isGenerating,
+                 ) {
+-                    Text("上传")
++                    Text(if (hasAttachment) "更换图片" else "上传")
++                }
++                if (hasAttachment) {
++                    androidx.compose.material3.TextButton(
++                        onClick = onRemoveAttachment,
++                        enabled = !isGenerating,
++                    ) {
++                        Text("移除")
++                    }
+                 }
+                 CompositionLocalProvider(LocalContentColor provides contentColor) {
