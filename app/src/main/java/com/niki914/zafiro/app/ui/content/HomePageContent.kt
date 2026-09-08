@@ -337,11 +337,20 @@ fun HomePageContent(
         onSendClick = {
             dismissInputFocus()
             shouldFollowBottom = true
-            viewModel.sendIntent(HomeChatIntent.Send)
+            val image = selectedImage
+            if (image == null) {
+                viewModel.sendIntent(HomeChatIntent.Send)
+            } else {
+                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
+                selectedImage = null
+            }
         },
         onStopClick = {
             viewModel.sendIntent(HomeChatIntent.StopGenerating)
         },
+        hasAttachment = selectedImage != null,
+        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
+        onRemoveAttachment = { selectedImage = null },
         modelOptions = modelOptions,
         activeModelId = activeModelId,
         onModelSelect = { configId ->
