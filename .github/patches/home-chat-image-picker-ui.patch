@@ -47,7 +47,10 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 +    }
      LaunchedEffect(selectedConversationId) {
          val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-@@ -313,1 +336,7 @@
+@@ -311,8 +337,17 @@
+         onSendClick = {
+             dismissInputFocus()
+             shouldFollowBottom = true
 -            viewModel.sendIntent(HomeChatIntent.Send)
 +            val image = selectedImage
 +            if (image == null) {
@@ -56,7 +59,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 +                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
 +                selectedImage = null
 +            }
-@@ -315,3 +344,6 @@
+         },
          onStopClick = {
              viewModel.sendIntent(HomeChatIntent.StopGenerating)
          },
