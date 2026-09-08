@@ -47,26 +47,14 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 +    }
      LaunchedEffect(selectedConversationId) {
          val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-@@ -311,8 +337,17 @@
-         onSendClick = {
-             dismissInputFocus()
-             shouldFollowBottom = true
--            viewModel.sendIntent(HomeChatIntent.Send)
-+            val image = selectedImage
-+            if (image == null) {
-+                viewModel.sendIntent(HomeChatIntent.Send)
-+            } else {
-+                viewModel.sendIntent(HomeChatIntent.SendWithImage(image))
-+                selectedImage = null
-+            }
-         },
+@@ -315,3 +338,6 @@
          onStopClick = {
              viewModel.sendIntent(HomeChatIntent.StopGenerating)
          },
 +        hasAttachment = selectedImage != null,
 +        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
 +        onRemoveAttachment = { selectedImage = null },
-@@ -399,6 +431,9 @@
+@@ -399,6 +425,9 @@
      onInputChange: (String) -> Unit,
      onSendClick: () -> Unit,
      onStopClick: () -> Unit,
@@ -76,7 +64,7 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
      modelOptions: List<ChatModelOption>,
      activeModelId: String?,
      onModelSelect: (String) -> Unit,
-@@ -471,6 +506,9 @@
+@@ -471,6 +500,9 @@
                  onValueChange = onInputChange,
                  onSendClick = onSendClick,
                  onStopClick = onStopClick,
