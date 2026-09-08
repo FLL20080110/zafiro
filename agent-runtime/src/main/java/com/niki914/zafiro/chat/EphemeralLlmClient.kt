@@ -9,6 +9,7 @@ import com.niki914.okia.protocol.OpenAIChatCompletionCompat
 import com.niki914.okia.protocol.OpenAIChatCompletionProtocol
 import com.niki914.okia.protocol.OpenAIResponsesProtocol
 import com.niki914.okia.tooling.DefaultToolRegistry
+import com.niki914.okia.transport.modelProxyHttpEngine
 import com.niki914.zafiro.chat.agentic.accessibility.SensitivePageGuard
 import com.niki914.zafiro.chat.agentic.stream.LlmStreamEventMapper
 import com.niki914.zafiro.settings.RuntimeEnvironment
@@ -58,6 +59,7 @@ object EphemeralLlmClient {
             this.endpoint = endpoint
             apiKey = llmConfig.apiKey
             model = llmConfig.model
+            httpEngine = modelProxyHttpEngine(llmConfig.proxy)
             idleTimeoutSeconds = llmConfig.idleTimeoutSeconds ?: NO_IDLE_TIMEOUT_SECONDS
             retryPolicy = RetryPolicy(maxAttempts = llmConfig.retryMaxAttempts)
             // Critical isolation boundary: background reply composition can never call local/MCP

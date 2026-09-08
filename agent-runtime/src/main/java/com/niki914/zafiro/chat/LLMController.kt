@@ -22,6 +22,7 @@ import com.niki914.okia.tooling.DefaultToolRegistry
 import com.niki914.okia.tooling.ToolDescriptor
 import com.niki914.okia.tooling.ToolKind
 import com.niki914.okia.tooling.ToolRegistry
+import com.niki914.okia.transport.modelProxyHttpEngine
 import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.xposed.api.util.LockState
 import com.niki914.zafiro.chat.agentic.AndroidImageLoader
@@ -225,6 +226,7 @@ object LLMController {
             apiKey = configWithoutRuntimePrompt.apiKey
             model = configWithoutRuntimePrompt.model
             headers = configWithoutRuntimePrompt.headers
+            httpEngine = modelProxyHttpEngine(configWithoutRuntimePrompt.proxy)
             // 热更新超时/重试策略：实例复用时也要跟随设置变化，否则改设置要冷启才生效
             idleTimeoutSeconds = configWithoutRuntimePrompt.idleTimeoutSeconds
                 ?: NO_IDLE_TIMEOUT_SECONDS
@@ -639,6 +641,7 @@ object LLMController {
             apiKey = config.apiKey
             model = config.model
             headers = config.headers
+            httpEngine = modelProxyHttpEngine(config.proxy)
             hooks += killToolResourcesHook
             // null = 不超时（General Settings 提供「不限时」选项）
             idleTimeoutSeconds = config.idleTimeoutSeconds ?: NO_IDLE_TIMEOUT_SECONDS
