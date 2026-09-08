@@ -47,13 +47,6 @@ diff --git a/app/src/main/java/com/niki914/zafiro/app/ui/content/HomePageContent
 +    }
      LaunchedEffect(selectedConversationId) {
          val id = selectedConversationId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-@@ -315,3 +338,6 @@
-         onStopClick = {
-             viewModel.sendIntent(HomeChatIntent.StopGenerating)
-         },
-+        hasAttachment = selectedImage != null,
-+        onUploadClick = { imagePicker.launch(arrayOf("image/*")) },
-+        onRemoveAttachment = { selectedImage = null },
 @@ -399,6 +425,9 @@
      onInputChange: (String) -> Unit,
      onSendClick: () -> Unit,
